@@ -1,0 +1,65 @@
+name: Verify MH NoteMate Screens
+on:
+  push:
+    paths:
+      - '.github/workflows/ui-check.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Build APK
+        run: |
+          if [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
+          fi
+          gradle --no-daemon assembleDebug
+      - name: Enable KVM
+        run: |
+          if [ -e /dev/kvm ]; then sudo chmod 666 /dev/kvm; fi
+      - name: Launch emulator and capture UI
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          script: |
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb shell wm size 432x960
+            adb shell wm density 440
+            adb shell am start -n com.mhdevelopers.notemate/.MainActivity
+            sleep 1
+            mkdir -p screenshots
+            adb shell screencap -p /sdcard/splash.png
+            adb pull /sdcard/splash.png screenshots/splash.png
+            sleep 3
+            adb shell screencap -p /sdcard/home.png
+            adb pull /sdcard/home.png screenshots/home.png
+            adb shell input tap 132 911
+            sleep 1
+            adb shell screencap -p /sdcard/notes.png
+            adb pull /sdcard/notes.png screenshots/notes.png
+            adb shell input tap 365 805
+            sleep 1
+            adb shell screencap -p /sdcard/editor.png
+            adb pull /sdcard/editor.png screenshots/editor.png
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: MHNoteMate-Emulator-Screenshots
+          path: screenshots/*.png
+          if-no-files-found: warn
