@@ -17,14 +17,19 @@ jobs:
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.11.1'
+          gradle-version: '8.13'
+      - name: Restore original MH NoteMate design and source
+        run: |
+          tar -xzf source_bundle/mh_notemate_project_source.tar.gz
+          test -f app/src/main/java/com/mhdevelopers/notemate/NotesDb.java
+          test -f app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
       - name: Android SDK environment
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
           ls "$ANDROID_HOME/platforms" || true
           ls "$ANDROID_HOME/build-tools" || true
           if [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
-            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0'
+            "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
           fi
       - name: Build APK
         run: gradle --no-daemon --stacktrace assembleDebug
