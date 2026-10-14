@@ -42,6 +42,18 @@ public class ReminderReceiver extends BroadcastReceiver {
             .setPriority(Notification.PRIORITY_MAX).setVisibility(Notification.VISIBILITY_PUBLIC).build();
         if(Build.VERSION.SDK_INT<33 || context.checkSelfPermission("android.permission.POST_NOTIFICATIONS")==PackageManager.PERMISSION_GRANTED)
             manager.notify((int)(id*2+stage),notification);
+        if(stage==1){
+            // Exact alarm time: ring audibly until stopped or after 60 seconds.
+            // Android can restrict background service starts on some devices;
+            // the high-priority alarm notification above remains the fallback.
+            try{
+                Intent ring=new Intent(context,AlarmRingService.class);
+                ring.setAction(AlarmRingService.ACTION_START);
+                ring.putExtra("title",n.title);
+                if(Build.VERSION.SDK_INT>=26)context.startForegroundService(ring);
+                else context.startService(ring);
+            }catch(Exception ignored){}
+        }
         if(stage==1 && !"Never".equals(n.repeat)) {
             Calendar next=Calendar.getInstance();next.setTimeInMillis(n.dueAt);
             int field="Daily".equals(n.repeat)?Calendar.DAY_OF_YEAR:Calendar.WEEK_OF_YEAR;
