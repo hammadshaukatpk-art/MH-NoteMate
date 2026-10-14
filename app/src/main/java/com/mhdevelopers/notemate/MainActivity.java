@@ -320,12 +320,16 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams p=lp(-1,-2);p.bottomMargin=d(11);content.addView(box,p);
     }
     private void noteOptions(NotesDb.Note n){
-        new AlertDialog.Builder(this).setTitle(n.title).setItems(new String[]{"Edit","Pin / Unpin","Delete"},(dialog,which)->{
-            if(which==0)edit(n,n.task==1);
-            if(which==1){n.pinned=1-n.pinned;db.save(n);render(tab);}
-            if(which==2)new AlertDialog.Builder(this).setTitle("Delete note?").setMessage("This action cannot be undone.")
-                .setNegativeButton("Cancel",null).setPositiveButton("Delete",(di,w)->{AlarmHelper.cancel(this,n.id);db.delete(n.id);render(tab);}).show();
-        }).show();
+        themedChoices(n.title,new String[]{"Edit","Pin / Unpin","Delete"},
+            new String[]{"Open and update this item","Keep it at the top of your list","Permanently remove this item"},
+            new String[]{"✎","★","⌫"},which->{
+                if(which==0)edit(n,n.task==1);
+                if(which==1){n.pinned=1-n.pinned;db.save(n);render(tab);}
+                if(which==2)themedConfirm("Delete "+(n.task==1?"Task":"Note")+"?",
+                    "This action cannot be undone.","Cancel","Delete",null,()->{
+                        AlarmHelper.cancel(this,n.id);db.delete(n.id);render(tab);
+                    });
+            });
     }
     private void empty(String title,String detail){
         LinearLayout l=card(WHITE,17);l.setGravity(Gravity.CENTER);pad(l,18,35,18,35);
@@ -440,6 +444,108 @@ public class MainActivity extends Activity {
         submit.setOnClickListener(v->{search=input.getText().toString().trim();filter="All";dialog.dismiss();render("Notes");});
         dialog.show();
     }
+    private interface ChoiceHandler {void select(int index);}
+
+    private void themedChoices(String heading,String[] options,String[] descriptions,String[] icons,ChoiceHandler onChoose){
+        LinearLayout shell=vert();shell.setBackground(shape(WHITE,20));
+        shell.addView(dialogHeading(heading));
+        LinearLayout body=vert();pad(body,18,16,18,18);
+        final AlertDialog dialog=themedDialog(shell);
+        for(int i=0;i<options.length;i++){
+            final int index=i;
+            LinearLayout row=horiz();pad(row,12,11,12,11);
+            row.setBackground(shape(i%2==0?0xFFEDF5FF:0xFFF5F8FF,14));
+            if(icons!=null && i<icons.length){
+                TextView icon=center(icons[i],22,BLUE,true);
+                icon.setBackground(shape(0xFFDDEBFF,12));
+                row.addView(icon,lp(42,42));
+            }
+            LinearLayout labels=vert();pad(labels,12,0,0,0);
+            labels.addView(txt(options[i],16,DARK,true));
+            if(descriptions!=null && i<descriptions.length && descriptions[i]!=null){
+                space(labels,4);labels.addView(txt(descriptions[i],12,MUTED,false));
+            }
+            weight(row,labels);
+            row.addView(center("›",22,BLUE,true));
+            row.setOnClickListener(v->{dialog.dismiss();onChoose.select(index);});
+            body.addView(row,lp(-1,descriptions==null?56:69));
+            space(body,9);
+        }
+        TextView cancel=dialogButton("Cancel",false);
+        cancel.setOnClickListener(v->dialog.dismiss());
+        body.addView(cancel,lp(-1,46));
+        shell.addView(body);dialog.show();
+    }
+
+    private void themedConfirm(String heading,String message,String cancelLabel,String acceptLabel,Runnable onCancel,Runnable onAccept){
+        LinearLayout shell=vert();shell.setBackground(shape(WHITE,20));
+        shell.addView(dialogHeading(heading));
+        LinearLayout body=vert();pad(body,20,18,20,20);
+        TextView description=txt(message,15,DARK,false);
+        description.setLineSpacing(d(4),1f);
+        body.addView(description);space(body,24);
+        LinearLayout buttons=horiz();
+        TextView cancel=dialogButton(cancelLabel,false);
+        TextView accept=dialogButton(acceptLabel,true);
+        LinearLayout.LayoutParams first=new LinearLayout.LayoutParams(0,d(48),1);first.rightMargin=d(10);
+        buttons.addView(cancel,first);buttons.addView(accept,new LinearLayout.LayoutParams(0,d(48),1));
+        body.addView(buttons);shell.addView(body);
+        final AlertDialog dialog=themedDialog(shell);
+        cancel.setOnClickListener(v->{dialog.dismiss();if(onCancel!=null)onCancel.run();});
+        accept.setOnClickListener(v->{dialog.dismiss();if(onAccept!=null)onAccept.run();});
+        dialog.setOnCancelListener(v->{if(onCancel!=null)onCancel.run();});
+        dialog.show();
+    }
+
+    private void themedDatePicker(Calendar when,TextView day){
+        LinearLayout shell=vert();shell.setBackground(shape(WHITE,20));
+        shell.addView(dialogHeading("Choose Reminder Date"));
+        DatePicker picker=new DatePicker(this);
+        picker.setCalendarViewShown(false);
+        picker.init(when.get(Calendar.YEAR),when.get(Calendar.MONTH),when.get(Calendar.DAY_OF_MONTH),null);
+        LinearLayout body=vert();pad(body,12,10,12,16);
+        body.addView(picker,lp(-1,-2));space(body,8);
+        LinearLayout buttons=horiz();
+        TextView cancel=dialogButton("Cancel",false),apply=dialogButton("Set Date",true);
+        LinearLayout.LayoutParams left=new LinearLayout.LayoutParams(0,d(48),1);left.rightMargin=d(10);
+        buttons.addView(cancel,left);buttons.addView(apply,new LinearLayout.LayoutParams(0,d(48),1));
+        body.addView(buttons);shell.addView(body);
+        final AlertDialog dialog=themedDialog(shell);
+        cancel.setOnClickListener(v->dialog.dismiss());
+        apply.setOnClickListener(v->{
+            when.set(Calendar.YEAR,picker.getYear());when.set(Calendar.MONTH,picker.getMonth());
+            when.set(Calendar.DAY_OF_MONTH,picker.getDayOfMonth());
+            day.setText(date(when.getTimeInMillis(),"dd MMM yyyy")+"   ›");
+            dialog.dismiss();
+        });
+        dialog.show();
+    }
+
+    private void themedTimePicker(Calendar when,TextView time){
+        LinearLayout shell=vert();shell.setBackground(shape(WHITE,20));
+        shell.addView(dialogHeading("Choose Reminder Time"));
+        TimePicker picker=new TimePicker(this);
+        picker.setIs24HourView(false);
+        picker.setHour(when.get(Calendar.HOUR_OF_DAY));
+        picker.setMinute(when.get(Calendar.MINUTE));
+        LinearLayout body=vert();pad(body,12,10,12,16);
+        body.addView(picker,lp(-1,-2));space(body,8);
+        LinearLayout buttons=horiz();
+        TextView cancel=dialogButton("Cancel",false),apply=dialogButton("Set Time",true);
+        LinearLayout.LayoutParams left=new LinearLayout.LayoutParams(0,d(48),1);left.rightMargin=d(10);
+        buttons.addView(cancel,left);buttons.addView(apply,new LinearLayout.LayoutParams(0,d(48),1));
+        body.addView(buttons);shell.addView(body);
+        final AlertDialog dialog=themedDialog(shell);
+        cancel.setOnClickListener(v->dialog.dismiss());
+        apply.setOnClickListener(v->{
+            when.set(Calendar.HOUR_OF_DAY,picker.getHour());when.set(Calendar.MINUTE,picker.getMinute());
+            when.set(Calendar.SECOND,0);when.set(Calendar.MILLISECOND,0);
+            time.setText(date(when.getTimeInMillis(),"h:mm a")+"   ›");
+            dialog.dismiss();
+        });
+        dialog.show();
+    }
+
     private void chooseNew(){
         // Match the app's blue-white dialogs instead of Android's plain system list.
         LinearLayout shell=vert();
@@ -501,7 +607,20 @@ public class MainActivity extends Activity {
         return e;
     }
     private Spinner spinner(String[] items,int selected){
-        Spinner s=new Spinner(this);ArrayAdapter<String> adapter=new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,items);s.setAdapter(adapter);s.setSelection(Math.max(0,selected));return s;
+        Spinner s=new Spinner(this){
+            @Override public boolean performClick(){
+                themedChoices("Select an Option",items,null,null,index->setSelection(index));
+                return true;
+            }
+        };
+        ArrayAdapter<String> adapter=new ArrayAdapter<String>(this,android.R.layout.simple_spinner_item,items){
+            @Override public View getView(int position,View convertView,ViewGroup parent){
+                TextView label=center(getItem(position)+"  ▾",14,BLUE,true);
+                pad(label,6,10,6,10);
+                return label;
+            }
+        };
+        s.setAdapter(adapter);s.setSelection(Math.max(0,selected));return s;
     }
     private void editorRow(LinearLayout panel,String label,View value){
         LinearLayout line=horiz();TextView title=txt(label,14,DARK,true);line.addView(title,new LinearLayout.LayoutParams(0,-2,1));
@@ -535,8 +654,8 @@ public class MainActivity extends Activity {
         final Calendar when=Calendar.getInstance();when.setTimeInMillis(n.dueAt>0?n.dueAt:System.currentTimeMillis()+3600_000L);
         TextView day=clickText(date(when.getTimeInMillis(),"dd MMM yyyy")+"   ›",14,BLUE,true,()->{});
         TextView time=clickText(date(when.getTimeInMillis(),"h:mm a")+"   ›",14,BLUE,true,()->{});
-        day.setOnClickListener(v->{alarm.setChecked(true);new DatePickerDialog(this,(view,y,m,d)->{when.set(Calendar.YEAR,y);when.set(Calendar.MONTH,m);when.set(Calendar.DAY_OF_MONTH,d);day.setText(date(when.getTimeInMillis(),"dd MMM yyyy")+"   ›");},when.get(Calendar.YEAR),when.get(Calendar.MONTH),when.get(Calendar.DAY_OF_MONTH)).show();});
-        time.setOnClickListener(v->{alarm.setChecked(true);new TimePickerDialog(this,(view,h,min)->{when.set(Calendar.HOUR_OF_DAY,h);when.set(Calendar.MINUTE,min);when.set(Calendar.SECOND,0);when.set(Calendar.MILLISECOND,0);time.setText(date(when.getTimeInMillis(),"h:mm a")+"   ›");},when.get(Calendar.HOUR_OF_DAY),when.get(Calendar.MINUTE),false).show();});
+        day.setOnClickListener(v->{alarm.setChecked(true);themedDatePicker(when,day);});
+        time.setOnClickListener(v->{alarm.setChecked(true);themedTimePicker(when,time);});
         LinearLayout alarmOptions=vert();editorRow(alarmOptions,"Date",day);editorRow(alarmOptions,"Time",time);
         TextView before=txt("15 minutes before",14,BLUE,true);
         editorRow(alarmOptions,"Notification",before);
@@ -556,10 +675,11 @@ public class MainActivity extends Activity {
             n.id=db.save(n);AlarmHelper.schedule(this,n);
             if(n.dueAt>0 && Build.VERSION.SDK_INT>=31){
                 AlarmManager am=(AlarmManager)getSystemService(ALARM_SERVICE);
-                if(!am.canScheduleExactAlarms())new AlertDialog.Builder(this).setTitle("Enable precise alarms")
-                    .setMessage("Your reminder is saved. For reliable on-time alerts, allow MH NoteMate to schedule exact alarms in Android settings.")
-                    .setNegativeButton("Later",(d,w)->render(isTask?"Tasks":"Notes"))
-                    .setPositiveButton("Open Settings",(d,w)->{exactAlarmSettings();render(isTask?"Tasks":"Notes");}).show();
+                if(!am.canScheduleExactAlarms())themedConfirm("Enable Precise Alarms",
+                    "Your reminder is saved. For reliable on-time alerts, allow MH NoteMate to schedule exact alarms in Android settings.",
+                    "Later","Open Settings",
+                    ()->render(isTask?"Tasks":"Notes"),
+                    ()->{exactAlarmSettings();render(isTask?"Tasks":"Notes");});
                 else render(isTask?"Tasks":"Notes");
             }else render(isTask?"Tasks":"Notes");
             Toast.makeText(this,"Saved successfully",Toast.LENGTH_SHORT).show();
