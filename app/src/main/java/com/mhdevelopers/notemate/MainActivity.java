@@ -52,7 +52,12 @@ public class MainActivity extends Activity {
         super.onCreate(state);getWindow().setStatusBarColor(WHITE);getWindow().setNavigationBarColor(WHITE);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
         db=new NotesDb(this);
-        requestNotifications();showSplash();
+        requestNotifications();
+        if(Build.VERSION.SDK_INT>=33){
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,()->handleBack());
+        }
+        showSplash();
     }
     private void requestNotifications() {
         if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
@@ -156,6 +161,53 @@ public class MainActivity extends Activity {
         TextView b=center(label,15,filled?WHITE:BLUE,true);pad(b,13,13,13,13);
         b.setBackground(shape(filled?BLUE:0xFFE9F1FF,12));return b;
     }
+    private TextView creditFooter(){
+        TextView credit=center("Credit: MH Developers",13,BLUE,true);
+        credit.setLetterSpacing(0.018f);
+        credit.setBackgroundColor(WHITE);
+        return credit;
+    }
+    private View editorBackArrow(Runnable action){
+        View arrow=new View(this){
+            private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
+            @Override protected void onDraw(Canvas canvas){
+                super.onDraw(canvas);
+                float cx=getWidth()/2f,cy=getHeight()/2f;
+                paint.setColor(DARK);paint.setStrokeWidth(d(2.5f));
+                paint.setStrokeCap(Paint.Cap.ROUND);paint.setStrokeJoin(Paint.Join.ROUND);
+                paint.setStyle(Paint.Style.STROKE);
+                android.graphics.Path path=new android.graphics.Path();
+                path.moveTo(cx+d(5),cy-d(9));path.lineTo(cx-d(4),cy);
+                path.lineTo(cx+d(5),cy+d(9));
+                canvas.drawPath(path,paint);
+            }
+        };
+        arrow.setContentDescription("Back to "+editorReturnTab);
+        arrow.setOnClickListener(v->action.run());
+        return arrow;
+    }
+    private void handleBack(){
+        if(splashShowing){return;}
+        if(editorOpen){render(editorReturnTab);return;}
+        if(!"Home".equals(tab)){render("Home");return;}
+        showExitConfirmation();
+    }
+    private void showExitConfirmation(){
+        LinearLayout shell=vert();shell.setBackground(shape(WHITE,20));
+        shell.addView(dialogHeading("Exit MH NoteMate?"));
+        LinearLayout body=vert();pad(body,20,18,20,20);
+        TextView message=txt("Do you really want to exit the app?",15,DARK,false);
+        body.addView(message);space(body,22);
+        LinearLayout actions=horiz();
+        TextView no=dialogButton("No, Stay",false),yes=dialogButton("Yes, Exit",true);
+        LinearLayout.LayoutParams first=new LinearLayout.LayoutParams(0,d(48),1);first.rightMargin=d(10);
+        actions.addView(no,first);actions.addView(yes,new LinearLayout.LayoutParams(0,d(48),1));
+        body.addView(actions);shell.addView(body);
+        AlertDialog dialog=themedDialog(shell);
+        no.setOnClickListener(v->dialog.dismiss());
+        yes.setOnClickListener(v->{dialog.dismiss();finishAffinity();});
+        dialog.show();
+    }
     private void render(String screen){
         editorOpen=false;splashShowing=false;tab=screen;
         root=vert();root.setBackgroundColor(BG);
@@ -182,6 +234,9 @@ public class MainActivity extends Activity {
                 else chooseNew();});
             FrameLayout.LayoutParams fabParams=new FrameLayout.LayoutParams(d(60),d(60),Gravity.BOTTOM|Gravity.RIGHT);
             fabParams.setMargins(0,0,d(22),d(20));page.addView(fab,fabParams);
+        }
+        if(screen.equals("Notes") || screen.equals("Tasks")){
+            root.addView(creditFooter(),lp(-1,30));
         }
         navigation();handleModernInsets(root);setContentView(root);
     }
@@ -219,7 +274,7 @@ public class MainActivity extends Activity {
         Collections.sort(today,Comparator.comparingLong(n->n.dueAt));
         if(today.isEmpty())empty("No reminders scheduled for today", "Tap + to create your first reminder.");
         for(NotesDb.Note n:today)noteCard(n,true);
-        space(content,85);content.addView(center("MH Developers",11,MUTED,false));
+        space(content,85);
     }
     private void stat(LinearLayout row,String icon,String label,int number,int color,String dest){
         LinearLayout box=card(WHITE,16);LinearLayout top=horiz();
@@ -246,7 +301,7 @@ public class MainActivity extends Activity {
             noteCard(n,false);count++;
         }
         if(count==0)empty(task?"No tasks yet":"No notes found",task?"Add a task to start planning.":"Tap + to create a colorful note.");
-        space(content,85);content.addView(center("MH Developers",11,MUTED,false));
+        space(content,85);
     }
     private void noteCard(NotesDb.Note n,boolean compact){
         LinearLayout box=card(PALE[Math.floorMod(n.color,PALE.length)],17);
@@ -300,7 +355,7 @@ public class MainActivity extends Activity {
         ImageView icon=new ImageView(this);icon.setImageResource(R.mipmap.ic_launcher);about.addView(icon,lp(90,90));
         space(about,10);about.addView(center("MH NoteMate",23,DARK,true));space(about,5);
         about.addView(center("Your Notes, Tasks & Reminders in One Place",13,MUTED,false));space(about,14);
-        about.addView(center("Version 1.0.0",12,MUTED,false));space(about,10);
+        about.addView(center("Version 1.0",12,MUTED,false));space(about,10);
         about.addView(center("Developed by MH Developers",14,BLUE,true));space(about,10);
         content.addView(about);space(content,18);
         content.addView(center("Your notes are saved locally on this device.\nNo account or internet connection required.",12,MUTED,false));
@@ -407,7 +462,9 @@ public class MainActivity extends Activity {
         NotesDb.Note n=note; n.task=isTask?1:0;
         root=vert();root.setBackgroundColor(BG);
         LinearLayout bar=horiz();pad(bar,16,10,16,10);bar.setBackgroundColor(WHITE);
-        bar.addView(clickText("‹",30,DARK,false,()->render(editorReturnTab)));
+        View back=editorBackArrow(()->render(editorReturnTab));
+        LinearLayout.LayoutParams backSize=lp(44,48);backSize.rightMargin=d(12);
+        bar.addView(back,backSize);
         TextView title=txt(n.id==0?(isTask?"Add Task":"Add Note"):(isTask?"Edit Task":"Edit Note"),21,DARK,true);weight(bar,title);
         TextView save=primary("✓");bar.addView(save,lp(46,44));root.addView(bar,lp(-1,64));
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);content=vert();pad(content,18,18,18,20);scroll.addView(content);
@@ -430,8 +487,8 @@ public class MainActivity extends Activity {
         day.setOnClickListener(v->{alarm.setChecked(true);new DatePickerDialog(this,(view,y,m,d)->{when.set(Calendar.YEAR,y);when.set(Calendar.MONTH,m);when.set(Calendar.DAY_OF_MONTH,d);day.setText(date(when.getTimeInMillis(),"dd MMM yyyy")+"   ›");},when.get(Calendar.YEAR),when.get(Calendar.MONTH),when.get(Calendar.DAY_OF_MONTH)).show();});
         time.setOnClickListener(v->{alarm.setChecked(true);new TimePickerDialog(this,(view,h,min)->{when.set(Calendar.HOUR_OF_DAY,h);when.set(Calendar.MINUTE,min);when.set(Calendar.SECOND,0);when.set(Calendar.MILLISECOND,0);time.setText(date(when.getTimeInMillis(),"h:mm a")+"   ›");},when.get(Calendar.HOUR_OF_DAY),when.get(Calendar.MINUTE),false).show();});
         LinearLayout alarmOptions=vert();editorRow(alarmOptions,"Date",day);editorRow(alarmOptions,"Time",time);
-        int selectedBefore=0;for(int i=0;i<MINUTES.length;i++)if(MINUTES[i]==n.before)selectedBefore=i;
-        Spinner before=spinner(BEFORE,selectedBefore);editorRow(alarmOptions,"Remind before",before);
+        TextView before=txt("15 minutes before",14,BLUE,true);
+        editorRow(alarmOptions,"Notification",before);
         Spinner repeat=spinner(REPEAT,Arrays.asList(REPEAT).indexOf(n.repeat));editorRow(alarmOptions,"Repeat",repeat);
         options.addView(alarmOptions);editorRow(options,"Category",category);options.addView(alarm);
         alarmOptions.setVisibility(View.VISIBLE);
@@ -442,7 +499,7 @@ public class MainActivity extends Activity {
             String value=name.getText().toString().trim();if(value.isEmpty()){name.setError("Please enter a title");name.requestFocus();return;}
             n.title=value;n.body=body.getText().toString().trim();n.color=color[0];n.category=CATS[category.getSelectedItemPosition()];
             n.dueAt=alarm.isChecked()?when.getTimeInMillis():0;
-            n.before=alarm.isChecked()?MINUTES[before.getSelectedItemPosition()]:0;
+            n.before=alarm.isChecked()?15:0;
             n.repeat=alarm.isChecked()?REPEAT[repeat.getSelectedItemPosition()]:"Never";
             if(n.dueAt>0 && n.dueAt<=System.currentTimeMillis()){Toast.makeText(this,"Choose a future date and time",Toast.LENGTH_LONG).show();return;}
             n.id=db.save(n);AlarmHelper.schedule(this,n);
@@ -457,10 +514,10 @@ public class MainActivity extends Activity {
             Toast.makeText(this,"Saved successfully",Toast.LENGTH_SHORT).show();
         };
         save.setOnClickListener(v->saveAction.run());saveBig.setOnClickListener(v->saveAction.run());
-        space(content,25);content.addView(center("MH Developers",11,MUTED,false));
+        root.addView(creditFooter(),lp(-1,32));
         handleModernInsets(root);setContentView(root);
     }
-    @Override public void onBackPressed(){if(editorOpen)render(editorReturnTab);else if(!tab.equals("Home"))render("Home");else super.onBackPressed();}
+    @Override public void onBackPressed(){handleBack();}
     @Override protected void onResume(){super.onResume();if(db!=null && !editorOpen && root!=null && !tab.isEmpty())AlarmHelper.rescheduleAll(this);}
     @Override protected void onDestroy(){if(db!=null)db.close();super.onDestroy();}
 }

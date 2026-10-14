@@ -23,7 +23,8 @@ public final class AlarmHelper {
         cancel(c,n.id);
         if(n.dueAt<=0 || n.done==1) return;
         AlarmManager am=(AlarmManager)c.getSystemService(Context.ALARM_SERVICE);
-        if(n.before>0) set(am,n.dueAt-n.before*60_000L,pending(c,n.id,0));
+        // All scheduled reminders give a notification 15 minutes beforehand.
+        set(am,n.dueAt-15*60_000L,pending(c,n.id,0));
         set(am,n.dueAt,pending(c,n.id,1));
     }
     private static void set(AlarmManager am,long at,PendingIntent pi) {

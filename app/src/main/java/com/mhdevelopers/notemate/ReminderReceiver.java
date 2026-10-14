@@ -15,7 +15,7 @@ import java.util.Calendar;
 
 public class ReminderReceiver extends BroadcastReceiver {
     private static final String PREVIEW_CHANNEL="notemate_upcoming_v1";
-    private static final String ALARM_CHANNEL="notemate_alarm_v1";
+    private static final String ALARM_CHANNEL="notemate_alarm_v2";
     @Override public void onReceive(Context context,Intent intent) {
         long id=intent.getLongExtra("note_id",-1);
         int stage=intent.getIntExtra("stage",1);
@@ -33,12 +33,13 @@ public class ReminderReceiver extends BroadcastReceiver {
         Intent open=new Intent(context,MainActivity.class);open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent tap=PendingIntent.getActivity(context,(int)id,open,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
         String heading=stage==0?"Upcoming: "+n.title:"Reminder: "+n.title;
-        String lead=n.before>=1440?"Tomorrow":n.before>=60?"In "+(n.before/60)+" hour(s)":"In "+n.before+" minutes";
+        String lead="In 15 minutes";
         String detail=stage==0?lead+(n.body.isEmpty()?"":" • "+n.body):n.body.isEmpty()?"It's time for your scheduled note or task.":n.body;
         Notification notification=new Notification.Builder(context,channelId)
             .setSmallIcon(android.R.drawable.ic_popup_reminder).setContentTitle(heading).setContentText(detail)
             .setStyle(new Notification.BigTextStyle().bigText(detail)).setContentIntent(tap)
-            .setAutoCancel(true).setCategory(Notification.CATEGORY_REMINDER).build();
+            .setAutoCancel(true).setCategory(stage==1?Notification.CATEGORY_ALARM:Notification.CATEGORY_REMINDER)
+            .setPriority(Notification.PRIORITY_MAX).setVisibility(Notification.VISIBILITY_PUBLIC).build();
         if(Build.VERSION.SDK_INT<33 || context.checkSelfPermission("android.permission.POST_NOTIFICATIONS")==PackageManager.PERMISSION_GRANTED)
             manager.notify((int)(id*2+stage),notification);
         if(stage==1 && !"Never".equals(n.repeat)) {
