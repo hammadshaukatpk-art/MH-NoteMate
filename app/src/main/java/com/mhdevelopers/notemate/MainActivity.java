@@ -9,6 +9,12 @@ import android.app.TimePickerDialog;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.Canvas;
+import android.graphics.Paint;
+import android.graphics.RectF;
+import android.content.Context;
+import android.net.Uri;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.Typeface;
 import android.text.SpannableString;
 import android.text.style.ForegroundColorSpan;
@@ -39,6 +45,7 @@ public class MainActivity extends Activity {
     private String tab="Home",filter="All",search="";
     private long selectedDay=System.currentTimeMillis();
     private boolean editorOpen=false;
+    private boolean splashShowing=false;
     private String editorReturnTab="Notes";
 
     @Override public void onCreate(Bundle state) {
@@ -49,7 +56,7 @@ public class MainActivity extends Activity {
     }
     private void requestNotifications() {
         if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
-            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},12);
+            {getPreferences(MODE_PRIVATE).edit().putBoolean("notification_asked",true).apply();requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},12);}
     }
     private int d(float x){return (int)(getResources().getDisplayMetrics().density*x+0.5f);}
     private GradientDrawable shape(int color,int radius) {GradientDrawable b=new GradientDrawable();b.setColor(color);b.setCornerRadius(d(radius));return b;}
@@ -76,26 +83,88 @@ public class MainActivity extends Activity {
         }
     }
     private void showSplash(){
-        LinearLayout splash=vert();splash.setGravity(Gravity.CENTER);splash.setBackground(gradient(0xFFF8FCFF,0xFFD5EBFF,0));
-        ImageView image=new ImageView(this);image.setImageResource(com.mhdevelopers.notemate.R.drawable.splash_logo);image.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        splashShowing=true;
+        FrameLayout stage=new FrameLayout(this);
+        stage.setBackground(gradient(0xFFF8FCFF,0xFFD5EBFF,0));
+        LinearLayout splash=vert();splash.setGravity(Gravity.CENTER);
+        ImageView image=new ImageView(this);image.setImageResource(R.drawable.splash_logo);image.setScaleType(ImageView.ScaleType.FIT_CENTER);
         splash.addView(image,lp(292,315));space(splash,8);
-        TextView title=center("MH NoteMate",32,DARK,true);SpannableString coloredTitle=new SpannableString("MH NoteMate");coloredTitle.setSpan(new ForegroundColorSpan(0xFF06A9EA),3,11,0);title.setText(coloredTitle);splash.addView(title);
+        TextView title=center("MH NoteMate",32,DARK,true);
+        SpannableString coloredTitle=new SpannableString("MH NoteMate");
+        coloredTitle.setSpan(new ForegroundColorSpan(0xFF06A9EA),3,11,0);
+        title.setText(coloredTitle);splash.addView(title);
         space(splash,12);splash.addView(center("Your Notes, Tasks & Reminders\nin One Place",15,MUTED,false));
-        LinearLayout progress=horiz();progress.setGravity(Gravity.CENTER);TextView line=center("━━━━━",24,BLUE,true);progress.addView(line);LinearLayout.LayoutParams loading=lp(-1,40);loading.topMargin=d(40);splash.addView(progress,loading);
-        LinearLayout.LayoutParams creditLp=lp(-1,38);creditLp.topMargin=d(16);
-        splash.addView(center("MH Developers",12,MUTED,false),creditLp);
-        handleModernInsets(splash);setContentView(splash);new Handler(getMainLooper()).postDelayed(()->render("Home"),1250);
+        LinearLayout progress=horiz();progress.setGravity(Gravity.CENTER);
+        TextView line=center("━━━━━",24,BLUE,true);progress.addView(line);
+        LinearLayout.LayoutParams loading=lp(-1,40);loading.topMargin=d(40);splash.addView(progress,loading);
+        FrameLayout.LayoutParams mainParams=new FrameLayout.LayoutParams(-1,-2,Gravity.CENTER);
+        mainParams.bottomMargin=d(34);stage.addView(splash,mainParams);
+        TextView credit=center("Credit : MH Developers",16,BLUE,true);
+        credit.setLetterSpacing(0.025f);
+        FrameLayout.LayoutParams footer=new FrameLayout.LayoutParams(-1,d(50),Gravity.BOTTOM);
+        footer.setMargins(d(12),0,d(12),d(24));stage.addView(credit,footer);
+        handleModernInsets(stage);setContentView(stage);
+        new Handler(getMainLooper()).postDelayed(()->render("Home"),1600);
+    }
+    private View toolbarIcon(boolean searchIcon,Runnable action){
+        View icon=new View(this){
+            final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
+            @Override protected void onDraw(Canvas c){
+                super.onDraw(c);
+                float cx=getWidth()/2f,cy=getHeight()/2f,unit=d(1);
+                paint.setColor(DARK);paint.setStrokeWidth(d(2.2f));paint.setStrokeCap(Paint.Cap.ROUND);
+                paint.setStyle(Paint.Style.STROKE);
+                if(searchIcon){
+                    c.drawCircle(cx-d(3),cy-d(3),d(7),paint);
+                    c.drawLine(cx+d(2),cy+d(2),cx+d(10),cy+d(10),paint);
+                }else{
+                    c.drawLine(cx-d(9),cy-d(4),cx+d(9),cy-d(4),paint);
+                    c.drawLine(cx-d(9),cy+d(4),cx+d(9),cy+d(4),paint);
+                }
+            }
+        };
+        icon.setContentDescription(searchIcon?"Search notes":"Open navigation menu");
+        icon.setOnClickListener(v->action.run());
+        return icon;
+    }
+    private View plusIcon(Runnable action){
+        View plus=new View(this){
+            final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
+            @Override protected void onDraw(Canvas c){
+                super.onDraw(c);float x=getWidth()/2f,y=getHeight()/2f;
+                paint.setColor(WHITE);paint.setStrokeWidth(d(3));paint.setStrokeCap(Paint.Cap.ROUND);
+                c.drawLine(x-d(10),y,x+d(10),y,paint);
+                c.drawLine(x,y-d(10),x,y+d(10),paint);
+            }
+        };
+        plus.setBackground(gradient(0xFF20B9FF,0xFF165BF4,100));plus.setElevation(d(8));
+        plus.setContentDescription("Add a new note or task");plus.setOnClickListener(v->action.run());
+        return plus;
+    }
+    private TextView dialogHeading(String label){
+        TextView title=txt(label,21,WHITE,true);pad(title,20,20,20,20);
+        title.setBackground(gradient(0xFF50B5FF,0xFF145DF3,16));return title;
+    }
+    private AlertDialog themedDialog(LinearLayout layout){
+        AlertDialog dialog=new AlertDialog.Builder(this).setView(layout).create();
+        dialog.setOnShowListener(x->{
+            if(dialog.getWindow()!=null){dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+                dialog.getWindow().setLayout((int)(getResources().getDisplayMetrics().widthPixels*.89f),-2);}
+        });return dialog;
+    }
+    private TextView dialogButton(String label,boolean filled){
+        TextView b=center(label,15,filled?WHITE:BLUE,true);pad(b,13,13,13,13);
+        b.setBackground(shape(filled?BLUE:0xFFE9F1FF,12));return b;
     }
     private void render(String screen){
-        editorOpen=false;tab=screen;
+        editorOpen=false;splashShowing=false;tab=screen;
         root=vert();root.setBackgroundColor(BG);
-        LinearLayout header=horiz();header.setBackgroundColor(WHITE);pad(header,18,12,18,12);
-        TextView menu=clickText("☰",23,DARK,false,()->showMenu());header.addView(menu);
+        LinearLayout header=horiz();header.setBackgroundColor(WHITE);pad(header,12,5,12,5);
+        View menu=toolbarIcon(false,()->showMenu());header.addView(menu,lp(44,48));
         TextView brand=txt(screen.equals("Home")?"MH NoteMate":screen,20,DARK,true);
         if(screen.equals("Home")){SpannableString logoText=new SpannableString("MH NoteMate");logoText.setSpan(new ForegroundColorSpan(BLUE),3,11,0);brand.setText(logoText);}
-        weight(header,brand);
-        header.addView(clickText("⌕",30,DARK,false,()->searchDialog()));
-        header.addView(clickText("●",19,BLUE,true,()->render("Settings")));
+        pad(brand,4,0,0,0);weight(header,brand);
+        View searchButton=toolbarIcon(true,()->searchDialog());header.addView(searchButton,lp(48,48));
         root.addView(header,lp(-1,58));
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setVerticalScrollBarEnabled(false);
         content=vert();pad(content,18,16,18,28);scroll.addView(content);
@@ -108,15 +177,11 @@ public class MainActivity extends Activity {
         if(screen.equals("Calendar"))calendar();
         if(screen.equals("Settings"))settings();
         if(!screen.equals("Settings")) {
-            TextView fab=center("+",34,WHITE,false);
-            fab.setBackground(gradient(0xFF20B9FF,0xFF165BF4,100));
-            fab.setElevation(d(8));
-            FrameLayout.LayoutParams fabParams=new FrameLayout.LayoutParams(d(60),d(60),Gravity.BOTTOM|Gravity.RIGHT);
-            fabParams.setMargins(0,0,d(22),d(20));page.addView(fab,fabParams);
-            fab.setContentDescription("Add a new note or task");
-            fab.setOnClickListener(v->{if(screen.equals("Tasks"))edit(new NotesDb.Note(),true);
+            View fab=plusIcon(()->{if(screen.equals("Tasks"))edit(new NotesDb.Note(),true);
                 else if(screen.equals("Notes"))edit(new NotesDb.Note(),false);
                 else chooseNew();});
+            FrameLayout.LayoutParams fabParams=new FrameLayout.LayoutParams(d(60),d(60),Gravity.BOTTOM|Gravity.RIGHT);
+            fabParams.setMargins(0,0,d(22),d(20));page.addView(fab,fabParams);
         }
         navigation();handleModernInsets(root);setContentView(root);
     }
@@ -139,7 +204,7 @@ public class MainActivity extends Activity {
         LinearLayout hero=card(BLUE,20);hero.setBackground(gradient(0xFF50B5FF,0xFF145DF3,20));pad(hero,20,23,20,23);
         Calendar c=Calendar.getInstance();int hour=c.get(Calendar.HOUR_OF_DAY);
         String greeting=hour<12?"Good Morning":hour<17?"Good Afternoon":"Good Evening";
-        hero.addView(txt(greeting+"\nHammad 👋     ☀️",23,WHITE,true));space(hero,16);
+        hero.addView(txt(greeting+"  ☀️",23,WHITE,true));space(hero,16);
         hero.addView(txt(date(System.currentTimeMillis(),"EEE, dd MMM yyyy"),14,WHITE,false));space(hero,5);
         content.addView(hero,lp(-1,-2));space(content,18);
         List<NotesDb.Note> all=db.all();int notes=0,tasks=0,reminders=0,done=0;
@@ -227,7 +292,7 @@ public class MainActivity extends Activity {
     private void settings(){
         heading("Preferences",null,null);
         LinearLayout c=card(WHITE,17);
-        settingsRow(c,"🔔","Notification permission","Allow MH NoteMate to send reminders",()->requestNotifications());
+        settingsRow(c,"🔔","Notification permission","Allow MH NoteMate to send reminders",()->openNotificationPermission());
         settingsRow(c,"⏰","Precise alarm access","For reminders to ring at the chosen time",()->exactAlarmSettings());
         settingsRow(c,"🔁","Restore scheduled alarms","Reschedule all upcoming reminders",()->{AlarmHelper.rescheduleAll(this);Toast.makeText(this,"Reminders refreshed",Toast.LENGTH_SHORT).show();});
         content.addView(c);space(content,18);heading("About",null,null);
@@ -254,12 +319,71 @@ public class MainActivity extends Activity {
             }else Toast.makeText(this,"Precise alarms are already allowed",Toast.LENGTH_SHORT).show();
         }else Toast.makeText(this,"Precise alarms are available",Toast.LENGTH_SHORT).show();
     }
-    private void showMenu(){new AlertDialog.Builder(this).setTitle("MH NoteMate").setItems(new String[]{"Home","Notes","Tasks","Calendar","Settings"},(d,w)->render(new String[]{"Home","Notes","Tasks","Calendar","Settings"}[w])).show();}
+    private void openNotificationPermission(){
+        if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED){
+            boolean asked=getPreferences(MODE_PRIVATE).getBoolean("notification_asked",false);
+            if(!asked || shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)){
+                getPreferences(MODE_PRIVATE).edit().putBoolean("notification_asked",true).apply();
+                requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},12);
+                return;
+            }
+            // Permanently denied: Android cannot display the runtime prompt again.
+            // Open the app's notification settings instead.
+        }
+        // Already granted? The row must still respond, allowing the user to review
+        // notification channels and settings instead of silently doing nothing.
+        try{
+            Intent i=new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS);
+            i.putExtra(Settings.EXTRA_APP_PACKAGE,getPackageName());
+            startActivity(i);
+        }catch(Exception e){
+            try{startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,Uri.parse("package:"+getPackageName())));}
+            catch(Exception ignored){Toast.makeText(this,"Notification settings are unavailable on this device",Toast.LENGTH_LONG).show();}
+        }
+    }
+    @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults){
+        super.onRequestPermissionsResult(requestCode,permissions,grantResults);
+        if(requestCode==12 && !splashShowing){
+            boolean allowed=grantResults.length>0 && grantResults[0]==PackageManager.PERMISSION_GRANTED;
+            Toast.makeText(this,allowed?"Notifications enabled":"Notifications not enabled. Tap again to open settings.",Toast.LENGTH_LONG).show();
+        }
+    }
+    private void showMenu(){
+        LinearLayout shell=vert();shell.setBackground(shape(WHITE,20));
+        shell.addView(dialogHeading("MH NoteMate  •  Menu"));
+        final AlertDialog dialog=themedDialog(shell);
+        String[] labels={"Home","Notes","Tasks","Calendar","Settings"};
+        String[] symbols={"⌂","▣","✓","▦","⚙"};
+        for(int i=0;i<labels.length;i++){
+            final String destination=labels[i];
+            LinearLayout row=horiz();pad(row,18,10,18,10);
+            TextView symbol=center(symbols[i],23,BLUE,true);symbol.setBackground(shape(0xFFEAF3FF,12));row.addView(symbol,lp(42,42));
+            TextView name=txt(labels[i],16,DARK,tab.equals(labels[i]));pad(name,16,0,0,0);weight(row,name);
+            row.addView(txt("›",23,MUTED,false));
+            row.setOnClickListener(v->{dialog.dismiss();render(destination);});
+            shell.addView(row,lp(-1,61));
+            if(i<labels.length-1){View separator=new View(this);separator.setBackgroundColor(0xFFEDF1F8);
+                LinearLayout.LayoutParams sep=lp(-1,1);sep.leftMargin=d(18);sep.rightMargin=d(18);shell.addView(separator,sep);}
+        }
+        space(shell,8);dialog.show();
+    }
     private void searchDialog(){
-        EditText input=new EditText(this);input.setSingleLine(true);input.setHint("Search notes and tasks");
-        new AlertDialog.Builder(this).setTitle("Search").setView(input).setNegativeButton("Cancel",null)
-            .setNeutralButton("Clear",(d,w)->{search="";render("Notes");})
-            .setPositiveButton("Search",(d,w)->{search=input.getText().toString().trim();filter="All";render("Notes");}).show();
+        LinearLayout shell=vert();shell.setBackground(shape(WHITE,20));
+        shell.addView(dialogHeading("Search Notes & Tasks"));
+        LinearLayout body=vert();pad(body,18,18,18,18);
+        EditText input=field("Search notes and tasks...",1);input.setText(search);
+        input.setBackground(shape(0xFFF0F5FD,12));body.addView(input,lp(-1,55));space(body,18);
+        LinearLayout actions=horiz();TextView clear=dialogButton("Clear",false);
+        TextView cancel=dialogButton("Cancel",false);TextView submit=dialogButton("Search",true);
+        LinearLayout.LayoutParams btn=new LinearLayout.LayoutParams(0,d(47),1);
+        btn.rightMargin=d(7);actions.addView(clear,btn);
+        LinearLayout.LayoutParams btn2=new LinearLayout.LayoutParams(0,d(47),1);btn2.rightMargin=d(7);actions.addView(cancel,btn2);
+        actions.addView(submit,new LinearLayout.LayoutParams(0,d(47),1));body.addView(actions);
+        shell.addView(body);AlertDialog dialog=themedDialog(shell);
+        clear.setOnClickListener(v->{search="";dialog.dismiss();render("Notes");});
+        cancel.setOnClickListener(v->dialog.dismiss());
+        submit.setOnClickListener(v->{search=input.getText().toString().trim();filter="All";dialog.dismiss();render("Notes");});
+        dialog.show();
     }
     private void chooseNew(){new AlertDialog.Builder(this).setTitle("Create new").setItems(new String[]{"📝 Note or reminder","✓ Task or scheduled task"},(di,w)->edit(new NotesDb.Note(),w==1)).show();}
     private TextView primary(String text){TextView t=center(text,16,WHITE,true);t.setBackground(gradient(0xFF23B5FC,0xFF1558F0,14));return t;}
