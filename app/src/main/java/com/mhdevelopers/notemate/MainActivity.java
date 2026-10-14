@@ -440,7 +440,58 @@ public class MainActivity extends Activity {
         submit.setOnClickListener(v->{search=input.getText().toString().trim();filter="All";dialog.dismiss();render("Notes");});
         dialog.show();
     }
-    private void chooseNew(){new AlertDialog.Builder(this).setTitle("Create new").setItems(new String[]{"📝 Note or reminder","✓ Task or scheduled task"},(di,w)->edit(new NotesDb.Note(),w==1)).show();}
+    private void chooseNew(){
+        // Match the app's blue-white dialogs instead of Android's plain system list.
+        LinearLayout shell=vert();
+        shell.setBackground(shape(WHITE,20));
+        shell.addView(dialogHeading("Create New"));
+        LinearLayout body=vert();
+        pad(body,18,18,18,18);
+        TextView intro=txt("What would you like to create?",15,MUTED,false);
+        body.addView(intro);
+        space(body,16);
+        final AlertDialog dialog=themedDialog(shell);
+
+        LinearLayout noteRow=horiz();
+        pad(noteRow,13,12,13,12);
+        noteRow.setBackground(shape(0xFFEDF5FF,15));
+        TextView noteIcon=center("✎",25,BLUE,true);
+        noteIcon.setBackground(shape(0xFFD8E9FF,13));
+        noteRow.addView(noteIcon,lp(49,49));
+        LinearLayout noteLabels=vert();
+        pad(noteLabels,14,0,0,0);
+        noteLabels.addView(txt("New Note",17,DARK,true));
+        space(noteLabels,4);
+        noteLabels.addView(txt("Write ideas, lists or reminders",12,MUTED,false));
+        weight(noteRow,noteLabels);
+        noteRow.addView(center("›",26,BLUE,true));
+        noteRow.setOnClickListener(v->{dialog.dismiss();edit(new NotesDb.Note(),false);});
+        body.addView(noteRow,lp(-1,76));
+
+        space(body,12);
+        LinearLayout taskRow=horiz();
+        pad(taskRow,13,12,13,12);
+        taskRow.setBackground(shape(0xFFEAF9F0,15));
+        TextView taskIcon=center("✓",25,0xFF149C54,true);
+        taskIcon.setBackground(shape(0xFFD3F5E0,13));
+        taskRow.addView(taskIcon,lp(49,49));
+        LinearLayout taskLabels=vert();
+        pad(taskLabels,14,0,0,0);
+        taskLabels.addView(txt("New Task",17,DARK,true));
+        space(taskLabels,4);
+        taskLabels.addView(txt("Plan a task with an alarm",12,MUTED,false));
+        weight(taskRow,taskLabels);
+        taskRow.addView(center("›",26,0xFF149C54,true));
+        taskRow.setOnClickListener(v->{dialog.dismiss();edit(new NotesDb.Note(),true);});
+        body.addView(taskRow,lp(-1,76));
+
+        space(body,18);
+        TextView cancel=dialogButton("Cancel",false);
+        cancel.setOnClickListener(v->dialog.dismiss());
+        body.addView(cancel,lp(-1,48));
+        shell.addView(body);
+        dialog.show();
+    }
     private TextView primary(String text){TextView t=center(text,16,WHITE,true);t.setBackground(gradient(0xFF23B5FC,0xFF1558F0,14));return t;}
     private EditText field(String hint,int lines){
         EditText e=new EditText(this);e.setTextSize(16);e.setTextColor(DARK);e.setHintTextColor(MUTED);e.setHint(hint);
