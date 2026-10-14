@@ -79,7 +79,7 @@ public class MainActivity extends Activity {
         LinearLayout splash=vert();splash.setGravity(Gravity.CENTER);splash.setBackground(gradient(0xFFF8FCFF,0xFFD5EBFF,0));
         ImageView image=new ImageView(this);image.setImageResource(com.mhdevelopers.notemate.R.drawable.splash_logo);image.setScaleType(ImageView.ScaleType.FIT_CENTER);
         splash.addView(image,lp(292,315));space(splash,8);
-        TextView title=center("MH NoteMate",32,DARK,true);SpannableString coloredTitle=new SpannableString("MH NoteMate");coloredTitle.setSpan(new ForegroundColorSpan(0xFF06A9EA),7,15,0);title.setText(coloredTitle);splash.addView(title);
+        TextView title=center("MH NoteMate",32,DARK,true);SpannableString coloredTitle=new SpannableString("MH NoteMate");coloredTitle.setSpan(new ForegroundColorSpan(0xFF06A9EA),3,11,0);title.setText(coloredTitle);splash.addView(title);
         space(splash,12);splash.addView(center("Your Notes, Tasks & Reminders\nin One Place",15,MUTED,false));
         LinearLayout progress=horiz();progress.setGravity(Gravity.CENTER);TextView line=center("━━━━━",24,BLUE,true);progress.addView(line);LinearLayout.LayoutParams loading=lp(-1,40);loading.topMargin=d(40);splash.addView(progress,loading);
         LinearLayout.LayoutParams creditLp=lp(-1,38);creditLp.topMargin=d(16);
