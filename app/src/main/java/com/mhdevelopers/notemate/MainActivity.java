@@ -361,7 +361,11 @@ public class MainActivity extends Activity {
     private void settings(){
         heading("Preferences",null,null);
         LinearLayout c=card(WHITE,17);
-        settingsRow(c,"🔔","Notification permission","Allow MH NoteMate to send reminders",()->openNotificationPermission());
+        NotificationManager nm=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
+        boolean notificationsAllowed=nm.areNotificationsEnabled() &&
+            (Build.VERSION.SDK_INT<33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)==PackageManager.PERMISSION_GRANTED);
+        settingsRow(c,"🔔","Notification permission",notificationsAllowed?"Enabled — notifications allowed":"BLOCKED — tap to enable notifications",()->openNotificationPermission());
+        settingsRow(c,"📣","Test notification","Post an immediate test alert",()->testNotification());
         AlarmManager am=(AlarmManager)getSystemService(ALARM_SERVICE);
         boolean exact=Build.VERSION.SDK_INT<31 || am.canScheduleExactAlarms();
         settingsRow(c,"⏰","Precise alarm access",exact?"Enabled — alarms can ring on time":"OFF — tap to allow exact alarms",()->exactAlarmSettings());
@@ -395,6 +399,45 @@ public class MainActivity extends Activity {
         LinearLayout row=horiz();TextView left=center(icon,26,BLUE,false);row.addView(left,lp(46,55));
         LinearLayout text=vert();text.addView(txt(title,15,DARK,true));text.addView(txt(subtitle,12,MUTED,false));row.addView(text,new LinearLayout.LayoutParams(0,-2,1));
         row.addView(txt("›",26,MUTED,false));pad(row,0,8,0,8);parent.addView(row);row.setOnClickListener(v->action.run());
+    }
+    private void testNotification(){
+        NotificationManager nm=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
+        if(Build.VERSION.SDK_INT>=33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED){
+            requestNotifications();
+            Toast.makeText(this,"Allow notifications, then tap Test notification again",Toast.LENGTH_LONG).show();
+            return;
+        }
+        if(!nm.areNotificationsEnabled()){
+            themedConfirm("Notifications are blocked",
+                "Android has disabled notifications for MH NoteMate. Enable them in system settings.",
+                "Later","Open settings",null,()->openNotificationPermission());
+            return;
+        }
+        String id="mh_notemate_test_v3";
+        android.app.NotificationChannel channel=new android.app.NotificationChannel(id,"MH NoteMate test alerts",
+            NotificationManager.IMPORTANCE_HIGH);
+        channel.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
+        channel.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
+            new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).build());
+        nm.createNotificationChannel(channel);
+        if(nm.getNotificationChannel(id).getImportance()==NotificationManager.IMPORTANCE_NONE){
+            themedConfirm("Test alerts disabled",
+                "Android has muted this notification channel. Please enable it in system notification settings.",
+                "Later","Open settings",null,()->openNotificationPermission());
+            return;
+        }
+        android.app.Notification alert=new android.app.Notification.Builder(this,id)
+            .setSmallIcon(android.R.drawable.ic_popup_reminder)
+            .setContentTitle("MH NoteMate test notification")
+            .setContentText("Notifications are working. Lock-screen display also depends on Android settings.")
+            .setPriority(android.app.Notification.PRIORITY_MAX)
+            .setCategory(android.app.Notification.CATEGORY_REMINDER)
+            .setVisibility(android.app.Notification.VISIBILITY_PUBLIC)
+            .setAutoCancel(true).build();
+        try{nm.notify(98765,alert);Toast.makeText(this,"Test notification sent — check your notification panel",Toast.LENGTH_LONG).show();}
+        catch(Exception error){android.util.Log.e("MHNoteMate","Test notification failed",error);
+            Toast.makeText(this,"Notification error: "+error.getClass().getSimpleName(),Toast.LENGTH_LONG).show();}
     }
     private Ringtone directTestRingtone;
     private ToneGenerator directTestTone;
@@ -744,6 +787,12 @@ public class MainActivity extends Activity {
             n.toneUri=selectedToneUri;
             if(n.dueAt>0 && n.dueAt<=System.currentTimeMillis()){Toast.makeText(this,"Choose a future date and time",Toast.LENGTH_LONG).show();return;}
             n.id=db.save(n);AlarmHelper.schedule(this,n);
+            NotificationManager notificationManager=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
+            if(!notificationManager.areNotificationsEnabled())
+                Toast.makeText(this,"Reminder saved, but Android notifications are BLOCKED. Enable them in Settings.",Toast.LENGTH_LONG).show();
+            if(Build.VERSION.SDK_INT>=33 &&
+                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
+                requestNotifications();
             if(n.dueAt>0 && Build.VERSION.SDK_INT>=31){
                 AlarmManager am=(AlarmManager)getSystemService(ALARM_SERVICE);
                 if(!am.canScheduleExactAlarms())themedConfirm("Enable Precise Alarms",
