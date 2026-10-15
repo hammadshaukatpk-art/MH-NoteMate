@@ -25,6 +25,8 @@ public class ReminderReceiver extends BroadcastReceiver {
         if(stage==0 && context.getSharedPreferences("mh_reminder_alerts",Context.MODE_PRIVATE)
                 .getLong("advance_notified_"+id,0L)==n.dueAt){db.close();return;}
         NotificationManager manager=(NotificationManager)context.getSystemService(Context.NOTIFICATION_SERVICE);
+        // The advance notification must disappear once the actual alarm is due.
+        if(stage==1)manager.cancel((int)(id*2));
         String channelId=stage==0?PREVIEW_CHANNEL:ALARM_CHANNEL;
         NotificationChannel channel=new NotificationChannel(channelId,
             stage==0?"Upcoming reminders":"Due alarms",NotificationManager.IMPORTANCE_HIGH);
