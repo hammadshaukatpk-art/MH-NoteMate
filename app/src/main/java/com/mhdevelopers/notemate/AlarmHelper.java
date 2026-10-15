@@ -23,8 +23,20 @@ public final class AlarmHelper {
         cancel(c,n.id);
         if(n.dueAt<=0 || n.done==1) return;
         AlarmManager am=(AlarmManager)c.getSystemService(Context.ALARM_SERVICE);
-        // All scheduled reminders give a notification 15 minutes beforehand.
-        set(am,n.dueAt-15*60_000L,pending(c,n.id,0));
+        // If saved inside the 15-minute window, notify immediately, exactly once per due time.
+        long now=System.currentTimeMillis();
+        long advanceAt=n.dueAt-15*60_000L;
+        if(n.dueAt>now && advanceAt<=now) {
+            String key="advance_notified_"+n.id;
+            if(c.getSharedPreferences("mh_reminder_alerts",Context.MODE_PRIVATE).getLong(key,0L)!=n.dueAt) {
+                Intent immediate=new Intent(c,ReminderReceiver.class);
+                immediate.putExtra("note_id",n.id);
+                immediate.putExtra("stage",0);
+                new ReminderReceiver().onReceive(c,immediate);
+            }
+        } else {
+            set(am,advanceAt,pending(c,n.id,0));
+        }
         set(am,n.dueAt,pending(c,n.id,1));
     }
     private static void set(AlarmManager am,long at,PendingIntent pi) {
