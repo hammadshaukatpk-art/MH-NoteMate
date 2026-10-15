@@ -60,9 +60,17 @@ public class AlarmRingService extends Service {
         }else startForeground(NOTIFICATION_ID,notification);
         try{
             if(ringtone!=null && ringtone.isPlaying())ringtone.stop();
-            Uri sound=RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+            String selected=intent==null?"":intent.getStringExtra("tone_uri");
+            Uri sound=null;
+            if(selected!=null && !selected.isEmpty()) {
+                try{sound=Uri.parse(selected);}catch(Exception error){
+                    android.util.Log.w("MHNoteMate","Selected ringtone unavailable",error);
+                }
+            }
+            if(sound==null)sound=RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
             if(sound==null)sound=RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
             ringtone=RingtoneManager.getRingtone(this,sound);
+            if(ringtone==null)ringtone=RingtoneManager.getRingtone(this,RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM));
             if(ringtone!=null){
                 ringtone.setAudioAttributes(new AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_ALARM)
@@ -70,7 +78,7 @@ public class AlarmRingService extends Service {
                 if(Build.VERSION.SDK_INT>=28)ringtone.setLooping(true);
                 ringtone.play();
             }
-        }catch(Exception ignored){/* The alarm notification remains as a fallback. */}
+        }catch(Exception error){android.util.Log.e("MHNoteMate","Unable to play selected alarm ringtone",error);}
         handler.removeCallbacks(autoStop);
         handler.postDelayed(autoStop,60_000L);
         return START_NOT_STICKY;
