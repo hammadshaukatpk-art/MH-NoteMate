@@ -47,6 +47,8 @@ public class AlarmRingService extends Service {
             try{getSharedPreferences("mh_diagnostics",MODE_PRIVATE).edit()
                 .putString("last_alarm_error","Alarm service crash prevented: "+error).apply();}
             catch(Exception ignored){}
+            try{AlarmAudioFallback.postAudibleFallback(this,"Your reminder is due");}
+            catch(Exception ignored){}
             try{stopSelf();}catch(Exception ignored){}
             return START_NOT_STICKY;
         }
@@ -97,7 +99,7 @@ public class AlarmRingService extends Service {
             getSharedPreferences("mh_diagnostics",MODE_PRIVATE).edit()
                 .putString("last_alarm_error","Foreground service: "+foregroundError.getClass().getSimpleName()
                     +": "+String.valueOf(foregroundError.getMessage())).apply();
-            AlarmAudioFallback.play(this,intent==null?"":intent.getStringExtra("tone_uri"));
+            AlarmAudioFallback.postAudibleFallback(this,title);
             // Never leave an ongoing 'ringing' notification after a failed service.
             try{manager.cancel(NOTIFICATION_ID);}catch(Exception ignored){}
             stopSelf();
