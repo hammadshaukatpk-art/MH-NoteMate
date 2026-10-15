@@ -6,6 +6,8 @@ import android.app.AlarmManager;
 import android.app.AlertDialog;
 import android.app.DatePickerDialog;
 import android.app.TimePickerDialog;
+import android.media.RingtoneManager;
+import android.media.Ringtone;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -47,6 +49,9 @@ public class MainActivity extends Activity {
     private boolean editorOpen=false;
     private boolean splashShowing=false;
     private String editorReturnTab="Notes";
+    private static final int PICK_ALARM_TONE=810;
+    private String selectedToneUri="";
+    private TextView selectedToneLabel;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);getWindow().setStatusBarColor(WHITE);getWindow().setNavigationBarColor(WHITE);
@@ -630,6 +635,8 @@ public class MainActivity extends Activity {
         editorReturnTab=tab;
         editorOpen=true;
         NotesDb.Note n=note; n.task=isTask?1:0;
+        selectedToneUri=n.toneUri==null?"":n.toneUri;
+        selectedToneLabel=null;
         root=vert();root.setBackgroundColor(BG);
         LinearLayout bar=horiz();pad(bar,16,10,16,10);bar.setBackgroundColor(WHITE);
         View back=editorBackArrow(()->render(editorReturnTab));
@@ -659,6 +666,19 @@ public class MainActivity extends Activity {
         LinearLayout alarmOptions=vert();editorRow(alarmOptions,"Date",day);editorRow(alarmOptions,"Time",time);
         TextView before=txt("15 minutes before",14,BLUE,true);
         editorRow(alarmOptions,"Notification",before);
+        selectedToneLabel=clickText(alarmToneName(selectedToneUri)+"   ›",14,BLUE,true,()->{});
+        selectedToneLabel.setOnClickListener(v->{
+            Intent picker=new Intent(RingtoneManager.ACTION_RINGTONE_PICKER);
+            picker.putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE,RingtoneManager.TYPE_ALARM);
+            picker.putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE,"Select reminder alarm tone");
+            picker.putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT,true);
+            picker.putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT,false);
+            picker.putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI,
+                selectedToneUri.isEmpty()?RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM):Uri.parse(selectedToneUri));
+            try{startActivityForResult(picker,PICK_ALARM_TONE);}
+            catch(Exception error){Toast.makeText(this,"Ringtone picker unavailable on this phone",Toast.LENGTH_LONG).show();}
+        });
+        editorRow(alarmOptions,"Alarm tone",selectedToneLabel);
         Spinner repeat=spinner(REPEAT,Arrays.asList(REPEAT).indexOf(n.repeat));editorRow(alarmOptions,"Repeat",repeat);
         options.addView(alarmOptions);editorRow(options,"Category",category);options.addView(alarm);
         alarmOptions.setVisibility(View.VISIBLE);
@@ -671,6 +691,7 @@ public class MainActivity extends Activity {
             n.dueAt=alarm.isChecked()?when.getTimeInMillis():0;
             n.before=alarm.isChecked()?15:0;
             n.repeat=alarm.isChecked()?REPEAT[repeat.getSelectedItemPosition()]:"Never";
+            n.toneUri=selectedToneUri;
             if(n.dueAt>0 && n.dueAt<=System.currentTimeMillis()){Toast.makeText(this,"Choose a future date and time",Toast.LENGTH_LONG).show();return;}
             n.id=db.save(n);AlarmHelper.schedule(this,n);
             if(n.dueAt>0 && Build.VERSION.SDK_INT>=31){
@@ -687,6 +708,22 @@ public class MainActivity extends Activity {
         save.setOnClickListener(v->saveAction.run());saveBig.setOnClickListener(v->saveAction.run());
         root.addView(creditFooter(),lp(-1,32));
         handleModernInsets(root);setContentView(root);
+    }
+    private String alarmToneName(String uri) {
+        if(uri==null || uri.isEmpty())return "Phone default";
+        try{
+            Ringtone r=RingtoneManager.getRingtone(this,Uri.parse(uri));
+            if(r!=null)return r.getTitle(this);
+        }catch(Exception ignored){}
+        return "Selected tone";
+    }
+    @Override protected void onActivityResult(int requestCode,int resultCode,Intent data) {
+        super.onActivityResult(requestCode,resultCode,data);
+        if(requestCode==PICK_ALARM_TONE && resultCode==RESULT_OK && data!=null) {
+            Uri picked=data.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI);
+            selectedToneUri=picked==null?"":picked.toString();
+            if(selectedToneLabel!=null)selectedToneLabel.setText(alarmToneName(selectedToneUri)+"   ›");
+        }
     }
     @Override public void onBackPressed(){handleBack();}
     @Override protected void onResume(){super.onResume();if(db!=null && !editorOpen && root!=null && !tab.isEmpty())AlarmHelper.rescheduleAll(this);}
