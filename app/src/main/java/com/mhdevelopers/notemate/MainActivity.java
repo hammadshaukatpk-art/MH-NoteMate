@@ -919,10 +919,9 @@ public class MainActivity extends Activity {
     @Override public void onBackPressed(){handleBack();}
     @Override protected void onResume(){
         super.onResume();
-        if(db!=null && !editorOpen && root!=null && !tab.isEmpty()){
-            try{AlarmHelper.rescheduleAll(this);}
-            catch(Exception error){android.util.Log.e("MHNoteMate","Alarm restore failed",error);}
-        }
+        // Opening the app while an alarm is ringing must not cancel/recreate every
+        // PendingIntent and alarm. Saving a reminder and BootReceiver handle scheduling.
+        // Settings has an explicit "Restore scheduled alarms" action.
     }
     @Override protected void onDestroy(){if(db!=null)db.close();try{if(directTestRingtone!=null)directTestRingtone.stop();}catch(Exception ignored){}if(directTestTone!=null)directTestTone.release();super.onDestroy();}
 }
