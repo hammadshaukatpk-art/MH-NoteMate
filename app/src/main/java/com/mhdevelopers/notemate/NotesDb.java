@@ -29,7 +29,7 @@ public class NotesDb extends SQLiteOpenHelper {
             db.execSQL("INSERT INTO notes(title,body,category,color,due_at,remind_before,repeat_rule,is_task,is_done,pinned,updated_at) SELECT title,COALESCE(body,''),'Personal',2,COALESCE(due,0),0,'Never',COALESCE(kind,0),COALESCE(done,0),0,strftime('%s','now')*1000 FROM legacy_notes");
             db.execSQL("DROP TABLE legacy_notes");
         }
-        if(oldVersion<3) db.execSQL("ALTER TABLE notes ADD COLUMN tone_uri TEXT NOT NULL DEFAULT ''");
+        if(oldVersion<3 && !legacy) db.execSQL("ALTER TABLE notes ADD COLUMN tone_uri TEXT NOT NULL DEFAULT ''");
     }
     private ContentValues values(Note n) {
         ContentValues v=new ContentValues();
