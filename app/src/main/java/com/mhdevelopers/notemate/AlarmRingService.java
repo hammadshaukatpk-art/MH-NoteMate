@@ -11,6 +11,8 @@ import android.media.AudioAttributes;
 import android.media.Ringtone;
 import android.media.MediaPlayer;
 import android.media.AudioManager;
+import android.media.ToneGenerator;
+import android.os.PowerManager;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
@@ -24,10 +26,12 @@ import android.os.Looper;
 public class AlarmRingService extends Service {
     public static final String ACTION_START="com.mhdevelopers.notemate.ALARM_START";
     public static final String ACTION_STOP="com.mhdevelopers.notemate.ALARM_STOP";
-    private static final String CHANNEL="mh_notemate_ringing_v1";
+    private static final String CHANNEL="mh_notemate_ringing_v3";
     private static final int NOTIFICATION_ID=54001;
     private Ringtone ringtone;
     private MediaPlayer player;
+    private ToneGenerator tone;
+    private PowerManager.WakeLock wakeLock;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final Runnable autoStop=this::stopSelf;
 
@@ -38,9 +42,11 @@ public class AlarmRingService extends Service {
             stopSelf();return START_NOT_STICKY;
         }
         NotificationManager manager=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
-        NotificationChannel channel=new NotificationChannel(CHANNEL,"Active MH NoteMate alarms",NotificationManager.IMPORTANCE_LOW);
+        NotificationChannel channel=new NotificationChannel(CHANNEL,"Active MH NoteMate alarms",NotificationManager.IMPORTANCE_HIGH);
         channel.setDescription("Shows a stop button while a scheduled alarm is ringing");
         channel.setSound(null,null);
+        channel.enableVibration(true);
+        channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
         manager.createNotificationChannel(channel);
         String title=intent==null?"Scheduled reminder":intent.getStringExtra("title");
         if(title==null || title.trim().isEmpty())title="Scheduled reminder";
@@ -57,10 +63,25 @@ public class AlarmRingService extends Service {
             .setContentIntent(open)
             .addAction(android.R.drawable.ic_media_pause,"Stop Alarm",stop)
             .setCategory(Notification.CATEGORY_ALARM)
+            .setPriority(Notification.PRIORITY_MAX)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setOngoing(true).build();
-        if(Build.VERSION.SDK_INT>=29){
-            startForeground(NOTIFICATION_ID,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
-        }else startForeground(NOTIFICATION_ID,notification);
+        try{
+            if(Build.VERSION.SDK_INT>=29)
+                startForeground(NOTIFICATION_ID,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
+            else startForeground(NOTIFICATION_ID,notification);
+        }catch(Exception foregroundError){
+            android.util.Log.e("MHNoteMate","Foreground alarm service could not start",foregroundError);
+            // Keep a visible fallback notification if the OEM blocks foreground promotion.
+            try{manager.notify(NOTIFICATION_ID,notification);}catch(Exception ignored){}
+        }
+        try{
+            PowerManager power=(PowerManager)getSystemService(POWER_SERVICE);
+            if(power!=null){
+                wakeLock=power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"MHNoteMate:AlarmAudio");
+                wakeLock.acquire(65_000L);
+            }
+        }catch(Exception error){android.util.Log.w("MHNoteMate","Wake lock unavailable",error);}
         try{
             stopAudio();
             String selected=intent==null?"":intent.getStringExtra("tone_uri");
@@ -95,11 +116,17 @@ public class AlarmRingService extends Service {
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
                     if(Build.VERSION.SDK_INT>=28)ringtone.setLooping(true);
                     ringtone.play();
-                }else android.util.Log.e("MHNoteMate","No playable alarm sound on this device");
+                }else android.util.Log.e("MHNoteMate","No playable alarm ringtone on this device");
+            }
+            // Final audible fallback if the device has no usable ringtone URI.
+            if((player==null || !player.isPlaying()) && (ringtone==null || !ringtone.isPlaying())){
+                tone=new ToneGenerator(AudioManager.STREAM_ALARM,100);
+                tone.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD,3000);
+                android.util.Log.w("MHNoteMate","Playing synthesized alarm fallback");
             }
             AudioManager audio=(AudioManager)getSystemService(AUDIO_SERVICE);
             if(audio!=null && audio.getStreamVolume(AudioManager.STREAM_ALARM)==0)
-                android.util.Log.w("MHNoteMate","Device alarm volume is muted");
+                android.util.Log.e("MHNoteMate","Alarm volume is ZERO; Android cannot play audible alarms");
         }catch(Exception error){android.util.Log.e("MHNoteMate","Unable to play selected alarm ringtone",error);}
         handler.removeCallbacks(autoStop);
         handler.postDelayed(autoStop,60_000L);
@@ -110,10 +137,12 @@ public class AlarmRingService extends Service {
         player=null;
         try{if(ringtone!=null && ringtone.isPlaying())ringtone.stop();}catch(Exception ignored){}
         ringtone=null;
+        if(tone!=null){try{tone.stopTone();tone.release();}catch(Exception ignored){}tone=null;}
     }
     @Override public void onDestroy(){
         handler.removeCallbacks(autoStop);
         stopAudio();
+        if(wakeLock!=null){try{if(wakeLock.isHeld())wakeLock.release();}catch(Exception ignored){}wakeLock=null;}
         super.onDestroy();
     }
 }
