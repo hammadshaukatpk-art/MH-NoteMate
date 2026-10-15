@@ -25,6 +25,14 @@ jobs:
           fi
       - name: Build APK
         run: gradle --no-daemon --stacktrace assembleDebug
+      - name: Build unsigned Play Store App Bundle
+        run: gradle --no-daemon --stacktrace bundleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MH-NoteMate-Unsigned-Release-AAB
+          path: app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 30
       - uses: actions/upload-artifact@v4
         with:
           name: MH-NoteMate-Original-Design-APK
