@@ -5,6 +5,8 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import java.util.Calendar;
 
 public final class AlarmHelper {
@@ -19,48 +21,67 @@ public final class AlarmHelper {
         AlarmManager am=(AlarmManager)c.getSystemService(Context.ALARM_SERVICE);
         am.cancel(pending(c,id,0));am.cancel(pending(c,id,1));
     }
-    public static void schedule(Context c,NotesDb.Note n) {
-        try{cancel(c,n.id);}catch(Exception error){android.util.Log.e("MHNoteMate","Unable to cancel old alarms",error);}
-        if(n.dueAt<=0 || n.done==1) return;
-        AlarmManager am=(AlarmManager)c.getSystemService(Context.ALARM_SERVICE);
-        // If saved inside the 15-minute window, notify immediately, exactly once per due time.
+    /** Returns false if Android refused to schedule the due-time alarm. */
+    public static boolean schedule(Context c,NotesDb.Note n) {
+        try{cancel(c,n.id);}catch(Exception error){android.util.Log.w("MHNoteMate","Could not cancel old alarms",error);}
+        if(n.dueAt<=0 || n.done==1) return true;
         long now=System.currentTimeMillis();
+        if(n.dueAt<=now)return false;
+        AlarmManager am=(AlarmManager)c.getSystemService(Context.ALARM_SERVICE);
+        if(am==null)return false;
+        // Always schedule the actual alarm FIRST. Do not show an advance alert
+        // for a reminder that has no due-time alarm scheduled.
+        boolean dueScheduled=set(c,am,n.dueAt,pending(c,n.id,1),true);
+        if(!dueScheduled)return false;
         long advanceAt=n.dueAt-15*60_000L;
-        if(n.dueAt>now && advanceAt<=now) {
+        if(advanceAt<=now){
             String key="advance_notified_"+n.id;
-            if(c.getSharedPreferences("mh_reminder_alerts",Context.MODE_PRIVATE).getLong(key,0L)!=n.dueAt) {
-                Intent immediate=new Intent(c,ReminderReceiver.class);
-                immediate.putExtra("note_id",n.id);
-                immediate.putExtra("stage",0);
-                // Do not let notification-channel or OEM failures crash the note editor.
-                try{new ReminderReceiver().onReceive(c,immediate);}
-                catch(Exception error){android.util.Log.e("MHNoteMate","Immediate reminder notification failed",error);}
+            if(c.getSharedPreferences("mh_reminder_alerts",Context.MODE_PRIVATE).getLong(key,0L)!=n.dueAt){
+                // Defer notification creation until after the editor save has finished.
+                // OEM NotificationManager failures must never crash the Save button.
+                final Context app=c.getApplicationContext();
+                final long id=n.id;
+                new Handler(Looper.getMainLooper()).post(()->{
+                    try{
+                        Intent preview=new Intent(app,ReminderReceiver.class);
+                        preview.putExtra("note_id",id);preview.putExtra("stage",0);
+                        new ReminderReceiver().onReceive(app,preview);
+                    }catch(Throwable error){
+                        android.util.Log.e("MHNoteMate","Advance notification failed",error);
+                        app.getSharedPreferences("mh_diagnostics",Context.MODE_PRIVATE).edit()
+                            .putString("last_alarm_error","Advance notification: "+error).apply();
+                    }
+                });
             }
-        } else {
-            set(c,am,advanceAt,pending(c,n.id,0),false);
-        }
-        set(c,am,n.dueAt,pending(c,n.id,1),true);
+        }else set(c,am,advanceAt,pending(c,n.id,0),false);
+        return true;
     }
-    private static void set(Context context,AlarmManager am,long at,PendingIntent pi,boolean due) {
-        if(at<=System.currentTimeMillis()) return;
-        if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.S && !am.canScheduleExactAlarms()) {
-            android.util.Log.w("MHNoteMate","Exact alarms disabled: scheduled reminder may be delayed");
-            try{am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,pi);}
-            catch(Exception error){android.util.Log.e("MHNoteMate","Inexact reminder scheduling failed",error);}
-            return;
-        }
-        try {
+    private static boolean set(Context context,AlarmManager am,long at,PendingIntent pi,boolean due) {
+        if(at<=System.currentTimeMillis())return false;
+        try{
+            if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.S && !am.canScheduleExactAlarms()){
+                android.util.Log.w("MHNoteMate","Exact alarm permission missing: delivery may be late");
+                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,pi);
+                return true; // Inexact, not guaranteed at requested time.
+            }
             if(due){
                 Intent open=new Intent(context,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 PendingIntent show=PendingIntent.getActivity(context,0,open,
                     PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
-                // User-visible alarm clock survives Doze and gives reliable due-time delivery.
                 am.setAlarmClock(new AlarmManager.AlarmClockInfo(at,show),pi);
             }else am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,pi);
-        }catch(Exception e){
-            android.util.Log.e("MHNoteMate","Exact alarm scheduling failed; trying inexact fallback",e);
-            try{am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,pi);}
-            catch(Exception fallbackError){android.util.Log.e("MHNoteMate","All alarm scheduling methods failed",fallbackError);}
+            return true;
+        }catch(Exception error){
+            android.util.Log.e("MHNoteMate","Exact alarm scheduling failed",error);
+            try{
+                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,pi);
+                return true;
+            }catch(Exception fallback){
+                android.util.Log.e("MHNoteMate","Could not schedule alarm at all",fallback);
+                context.getSharedPreferences("mh_diagnostics",Context.MODE_PRIVATE).edit()
+                    .putString("last_alarm_error","Alarm scheduling: "+fallback).apply();
+                return false;
+            }
         }
     }
     public static void rescheduleAll(Context c) {
