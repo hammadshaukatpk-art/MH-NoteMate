@@ -98,7 +98,6 @@ public class ReminderReceiver extends BroadcastReceiver {
                     .putString("last_alarm_error","Due alarm service start: "+error).apply();
                 // If Android refuses the foreground-service start, attempt short
                 // receiver-owned alarm playback rather than silently dropping it.
-                AlarmAudioFallback.play(context,n.toneUri);
                 AlarmAudioFallback.postAudibleFallback(context,n.title);
             }
         }
