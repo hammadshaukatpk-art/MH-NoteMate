@@ -32,6 +32,10 @@ public class ReminderReceiver extends BroadcastReceiver {
         NotesDb db=new NotesDb(context);NotesDb.Note n=db.get(id);
         if(n==null || n.done==1 || n.dueAt<=0) {db.close();return;}
         if(stage==0 && n.dueAt<=System.currentTimeMillis()){db.close();return;}
+        if(stage==1){
+            // Audio first: a notification error must NEVER prevent the alarm from ringing.
+            startDueAlarm(context,n);
+        }
         if(stage==0 && context.getSharedPreferences("mh_reminder_alerts",Context.MODE_PRIVATE)
                 .getLong("advance_notified_"+id,0L)==n.dueAt){db.close();return;}
         NotificationManager manager=(NotificationManager)context.getSystemService(Context.NOTIFICATION_SERVICE);
@@ -78,11 +82,16 @@ public class ReminderReceiver extends BroadcastReceiver {
                 }catch(Exception error){android.util.Log.e("MHNoteMate","Reminder notification failed",error);}
             }else android.util.Log.e("MHNoteMate","Reminder notifications disabled in Android settings");
         }
-        if(stage==1){
-            if(dueNotificationPosted)manager.cancel((int)(id*2));
-            // Exact alarm time: ring audibly until stopped or after 60 seconds.
-            // Android can restrict background service starts on some devices;
-            // the high-priority alarm notification above remains the fallback.
+        if(stage==1 && dueNotificationPosted)manager.cancel((int)(id*2));
+        if(stage==1 && !"Never".equals(n.repeat)) {
+            Calendar next=Calendar.getInstance();next.setTimeInMillis(n.dueAt);
+            int field="Daily".equals(n.repeat)?Calendar.DAY_OF_YEAR:Calendar.WEEK_OF_YEAR;
+            do {next.add(field,1);} while(next.getTimeInMillis()<=System.currentTimeMillis());
+            n.dueAt=next.getTimeInMillis();db.save(n);AlarmHelper.schedule(context,n);
+        }
+        db.close();
+    }
+    private void startDueAlarm(Context context,NotesDb.Note n){
             try{
                 Intent ring=new Intent(context,AlarmRingService.class);
                 ring.setAction(AlarmRingService.ACTION_START);
@@ -100,13 +109,6 @@ public class ReminderReceiver extends BroadcastReceiver {
                 // receiver-owned alarm playback rather than silently dropping it.
                 AlarmAudioFallback.postAudibleFallback(context,n.title);
             }
-        }
-        if(stage==1 && !"Never".equals(n.repeat)) {
-            Calendar next=Calendar.getInstance();next.setTimeInMillis(n.dueAt);
-            int field="Daily".equals(n.repeat)?Calendar.DAY_OF_YEAR:Calendar.WEEK_OF_YEAR;
-            do {next.add(field,1);} while(next.getTimeInMillis()<=System.currentTimeMillis());
-            n.dueAt=next.getTimeInMillis();db.save(n);AlarmHelper.schedule(context,n);
-        }
-        db.close();
     }
+
 }
