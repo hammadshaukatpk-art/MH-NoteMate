@@ -26,12 +26,15 @@ import android.os.Looper;
 public class AlarmRingService extends Service {
     public static final String ACTION_START="com.mhdevelopers.notemate.ALARM_START";
     public static final String ACTION_STOP="com.mhdevelopers.notemate.ALARM_STOP";
-    private static final String CHANNEL="mh_notemate_ringing_v3";
+    private static final String CHANNEL="mh_notemate_ringing_silent_v4";
     private static final int NOTIFICATION_ID=54001;
     private Ringtone ringtone;
     private MediaPlayer player;
     private ToneGenerator tone;
     private PowerManager.WakeLock wakeLock;
+    private long playingNoteId=-1L;
+    private long playingDueAt=-1L;
+    private boolean audioActive=false;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final Runnable autoStop=this::stopSelf;
 
@@ -41,11 +44,17 @@ public class AlarmRingService extends Service {
         if(intent!=null && ACTION_STOP.equals(intent.getAction())){
             stopSelf();return START_NOT_STICKY;
         }
+        long requestedId=intent==null?-1L:intent.getLongExtra("note_id",-1L);
+        long requestedDue=intent==null?-1L:intent.getLongExtra("due_at",-1L);
+        if(audioActive && requestedId>=0 && requestedId==playingNoteId && requestedDue==playingDueAt){
+            android.util.Log.i("MHNoteMate","Duplicate alarm start ignored");
+            return START_NOT_STICKY;
+        }
         NotificationManager manager=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
-        NotificationChannel channel=new NotificationChannel(CHANNEL,"Active MH NoteMate alarms",NotificationManager.IMPORTANCE_HIGH);
+        NotificationChannel channel=new NotificationChannel(CHANNEL,"Active MH NoteMate alarms",NotificationManager.IMPORTANCE_LOW);
         channel.setDescription("Shows a stop button while a scheduled alarm is ringing");
         channel.setSound(null,null);
-        channel.enableVibration(true);
+        channel.enableVibration(false);
         channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
         manager.createNotificationChannel(channel);
         String title=intent==null?"Scheduled reminder":intent.getStringExtra("title");
@@ -63,7 +72,7 @@ public class AlarmRingService extends Service {
             .setContentIntent(open)
             .addAction(android.R.drawable.ic_media_pause,"Stop Alarm",stop)
             .setCategory(Notification.CATEGORY_ALARM)
-            .setPriority(Notification.PRIORITY_MAX)
+            .setPriority(Notification.PRIORITY_LOW)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setOngoing(true).build();
         try{
@@ -92,6 +101,8 @@ public class AlarmRingService extends Service {
         }catch(Exception error){android.util.Log.w("MHNoteMate","Wake lock unavailable",error);}
         try{
             stopAudio();
+            playingNoteId=requestedId;
+            playingDueAt=requestedDue;
             String selected=intent==null?"":intent.getStringExtra("tone_uri");
             Uri sound=null;
             if(selected!=null && !selected.isEmpty()) {
@@ -111,6 +122,7 @@ public class AlarmRingService extends Service {
                 player.setLooping(true);
                 player.prepare();
                 player.start();
+                audioActive=true;
                 android.util.Log.i("MHNoteMate","Alarm audio started");
             }catch(Exception mediaError){
                 android.util.Log.w("MHNoteMate","MediaPlayer failed; using ringtone fallback",mediaError);
@@ -124,12 +136,13 @@ public class AlarmRingService extends Service {
                         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
                     if(Build.VERSION.SDK_INT>=28)ringtone.setLooping(true);
                     ringtone.play();
+                    audioActive=ringtone.isPlaying();
                 }else android.util.Log.e("MHNoteMate","No playable alarm ringtone on this device");
             }
             // Final audible fallback if the device has no usable ringtone URI.
             if((player==null || !player.isPlaying()) && (ringtone==null || !ringtone.isPlaying())){
                 tone=new ToneGenerator(AudioManager.STREAM_ALARM,100);
-                tone.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD,3000);
+                audioActive=tone.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD,3000);
                 android.util.Log.w("MHNoteMate","Playing synthesized alarm fallback");
             }
             AudioManager audio=(AudioManager)getSystemService(AUDIO_SERVICE);
@@ -141,6 +154,9 @@ public class AlarmRingService extends Service {
         return START_NOT_STICKY;
     }
     private void stopAudio(){
+        audioActive=false;
+        playingNoteId=-1L;
+        playingDueAt=-1L;
         try{if(player!=null){if(player.isPlaying())player.stop();player.release();}}catch(Exception ignored){}
         player=null;
         try{if(ringtone!=null && ringtone.isPlaying())ringtone.stop();}catch(Exception ignored){}
