@@ -15,7 +15,7 @@ import java.util.Calendar;
 
 public class ReminderReceiver extends BroadcastReceiver {
     private static final String PREVIEW_CHANNEL="notemate_upcoming_v3";
-    private static final String ALARM_CHANNEL="notemate_alarm_v4";
+    private static final String ALARM_CHANNEL="notemate_alarm_silent_v5";
     @Override public void onReceive(Context context,Intent intent) {
         try{
         handleReminder(context,intent);
@@ -40,12 +40,14 @@ public class ReminderReceiver extends BroadcastReceiver {
         String channelId=stage==0?PREVIEW_CHANNEL:ALARM_CHANNEL;
         NotificationChannel channel=new NotificationChannel(channelId,
             stage==0?"Upcoming reminders":"Due alarms",NotificationManager.IMPORTANCE_HIGH);
-        channel.setDescription(stage==0?"Advance alerts for upcoming notes and tasks":"Alarm sound when a note or task is due");
-        channel.enableVibration(true);
+        channel.setDescription(stage==0?"Advance alerts for upcoming notes and tasks":"Silent due-time status; the ringing service plays the selected alarm tone");
+        channel.enableVibration(stage==0);
         channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
-        if(stage==1)channel.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM),
-            new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).build());
-        else channel.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
+        if(stage==1){
+            // Critical: the alarm service is the ONLY source of alarm audio.
+            // The old due channel played a second default alarm tone over the selected tone.
+            channel.setSound(null,null);
+        }else channel.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
             new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).build());
         manager.createNotificationChannel(channel);
         Intent open=new Intent(context,MainActivity.class);open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TOP);
@@ -58,7 +60,9 @@ public class ReminderReceiver extends BroadcastReceiver {
             .setSmallIcon(android.R.drawable.ic_popup_reminder).setContentTitle(heading).setContentText(detail)
             .setStyle(new Notification.BigTextStyle().bigText(detail)).setContentIntent(tap)
             .setAutoCancel(true).setCategory(stage==1?Notification.CATEGORY_ALARM:Notification.CATEGORY_REMINDER)
-            .setPriority(Notification.PRIORITY_MAX).setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setPriority(stage==0?Notification.PRIORITY_MAX:Notification.PRIORITY_LOW)
+            .setOnlyAlertOnce(true)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setTimeoutAfter(stage==0?Math.max(1_000L,n.dueAt-System.currentTimeMillis()):5*60_000L)
             .build();
         if(Build.VERSION.SDK_INT<33 || context.checkSelfPermission("android.permission.POST_NOTIFICATIONS")==PackageManager.PERMISSION_GRANTED) {
@@ -81,6 +85,8 @@ public class ReminderReceiver extends BroadcastReceiver {
                 ring.setAction(AlarmRingService.ACTION_START);
                 ring.putExtra("title",n.title);
                 ring.putExtra("tone_uri",n.toneUri);
+                ring.putExtra("note_id",n.id);
+                ring.putExtra("due_at",n.dueAt);
                 if(Build.VERSION.SDK_INT>=26)context.startForegroundService(ring);
                 else context.startService(ring);
             }catch(Exception error){
