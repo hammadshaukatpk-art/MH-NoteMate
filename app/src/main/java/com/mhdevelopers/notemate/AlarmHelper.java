@@ -35,17 +35,28 @@ public final class AlarmHelper {
                 new ReminderReceiver().onReceive(c,immediate);
             }
         } else {
-            set(am,advanceAt,pending(c,n.id,0));
+            set(c,am,advanceAt,pending(c,n.id,0),false);
         }
-        set(am,n.dueAt,pending(c,n.id,1));
+        set(c,am,n.dueAt,pending(c,n.id,1),true);
     }
-    private static void set(AlarmManager am,long at,PendingIntent pi) {
+    private static void set(Context context,AlarmManager am,long at,PendingIntent pi,boolean due) {
         if(at<=System.currentTimeMillis()) return;
         if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.S && !am.canScheduleExactAlarms()) {
+            android.util.Log.w("MHNoteMate","Exact alarms disabled: scheduled reminder may be delayed");
             am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,pi);
-        } else {
-            try { am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,pi); }
-            catch(SecurityException e) { am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,pi); }
+            return;
+        }
+        try {
+            if(due){
+                Intent open=new Intent(context,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                PendingIntent show=PendingIntent.getActivity(context,0,open,
+                    PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
+                // User-visible alarm clock survives Doze and gives reliable due-time delivery.
+                am.setAlarmClock(new AlarmManager.AlarmClockInfo(at,show),pi);
+            }else am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,pi);
+        }catch(SecurityException e){
+            android.util.Log.e("MHNoteMate","Exact alarm access denied",e);
+            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,pi);
         }
     }
     public static void rescheduleAll(Context c) {
