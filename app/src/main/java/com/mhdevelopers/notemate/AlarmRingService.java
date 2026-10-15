@@ -41,6 +41,17 @@ public class AlarmRingService extends Service {
     @Override public IBinder onBind(Intent intent){return null;}
 
     @Override public int onStartCommand(Intent intent,int flags,int startId){
+        try{return startAlarm(intent,flags,startId);}
+        catch(RuntimeException error){
+            android.util.Log.e("MHNoteMate","Alarm service startup error",error);
+            try{getSharedPreferences("mh_diagnostics",MODE_PRIVATE).edit()
+                .putString("last_alarm_error","Alarm service crash prevented: "+error).apply();}
+            catch(Exception ignored){}
+            try{stopSelf();}catch(Exception ignored){}
+            return START_NOT_STICKY;
+        }
+    }
+    private int startAlarm(Intent intent,int flags,int startId){
         if(intent!=null && ACTION_STOP.equals(intent.getAction())){
             stopSelf();return START_NOT_STICKY;
         }
