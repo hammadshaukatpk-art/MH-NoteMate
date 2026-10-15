@@ -192,26 +192,8 @@ public class MainActivity extends Activity {
             if(isFinishing() || isDestroyed())return;
             try{
                 render("Home");
-                showLastCrashIfAny();
             }catch(RuntimeException error){recoverFromUiFailure("Startup",error);}
         },1600);
-    }
-    private void showLastCrashIfAny(){
-        String error=getSharedPreferences("mh_diagnostics",MODE_PRIVATE).getString("last_app_crash","");
-        if(error.isEmpty() || isFinishing() || isDestroyed())return;
-        getSharedPreferences("mh_diagnostics",MODE_PRIVATE).edit().remove("last_app_crash").apply();
-        try{
-            themedConfirm("Previous app error detected",
-                "MH NoteMate recorded an error. Your notes are stored locally. "+
-                "Use Copy details to share the exact cause:\\n\\n"+error,
-                "Dismiss","Copy details",null,()->{
-                    android.content.ClipboardManager clipboard=
-                        (android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
-                    if(clipboard!=null)clipboard.setPrimaryClip(
-                        android.content.ClipData.newPlainText("MH NoteMate crash report",error));
-                    Toast.makeText(this,"Error details copied",Toast.LENGTH_SHORT).show();
-                });
-        }catch(Exception dialogError){android.util.Log.e("MHNoteMate","Crash report dialog failed",dialogError);}
     }
     private View toolbarIcon(boolean searchIcon,Runnable action){
         View icon=new View(this){
@@ -462,15 +444,6 @@ public class MainActivity extends Activity {
         boolean exact=Build.VERSION.SDK_INT<31 || am.canScheduleExactAlarms();
         settingsRow(c,"⏰","Precise alarm access",exact?"Enabled — alarms can ring on time":"OFF — tap to allow exact alarms",()->exactAlarmSettings());
         settingsRow(c,"🔁","Restore scheduled alarms","Reschedule all upcoming reminders",()->{AlarmHelper.rescheduleAll(this);Toast.makeText(this,"Reminders refreshed",Toast.LENGTH_SHORT).show();});
-        settingsRow(c,"🛠","Last alarm error","Show diagnostic details if a reminder fails",()->{
-            String error=getSharedPreferences("mh_diagnostics",MODE_PRIVATE)
-                .getString("last_alarm_error","No alarm error has been recorded yet.");
-            themedConfirm("Alarm diagnostics",error,"Close","Copy details",null,()->{
-                android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
-                if(clipboard!=null)clipboard.setPrimaryClip(android.content.ClipData.newPlainText("MH NoteMate alarm error",error));
-                Toast.makeText(this,"Diagnostic details copied",Toast.LENGTH_SHORT).show();
-            });
-        });
         settingsRow(c,"🔊","Test alarm sound","Play a ringtone directly and check your alarm volume",()->testAlarmSound());
         settingsRow(c,"🔔","Test alarm service","Test the background ringing system",()->{
             Intent test=new Intent(this,AlarmRingService.class);
@@ -938,7 +911,11 @@ public class MainActivity extends Activity {
     private void showThemedTonePicker(){
         ArrayList<String> uris=new ArrayList<>(),names=new ArrayList<>();
         uris.add("");names.add("Phone default alarm");
-        RingtoneManager rm=new RingtoneManager(this);rm.setType(RingtoneManager.TYPE_ALARM);
+        // RingtoneManager(Activity) registers a managed cursor with Android.
+        // Closing that cursor here causes StaleDataException during Activity.performRestart.
+        // Use application context to obtain an UNMANAGED cursor that we own and close.
+        RingtoneManager rm=new RingtoneManager(getApplicationContext());
+        rm.setType(RingtoneManager.TYPE_ALARM);
         try(Cursor cursor=rm.getCursor()){
             if(cursor!=null)for(int i=0;i<cursor.getCount() && i<50;i++){
                 try{Uri uri=rm.getRingtoneUri(i);
