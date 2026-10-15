@@ -58,7 +58,9 @@ public class ReminderReceiver extends BroadcastReceiver {
             .setSmallIcon(android.R.drawable.ic_popup_reminder).setContentTitle(heading).setContentText(detail)
             .setStyle(new Notification.BigTextStyle().bigText(detail)).setContentIntent(tap)
             .setAutoCancel(true).setCategory(stage==1?Notification.CATEGORY_ALARM:Notification.CATEGORY_REMINDER)
-            .setPriority(Notification.PRIORITY_MAX).setVisibility(Notification.VISIBILITY_PUBLIC).build();
+            .setPriority(Notification.PRIORITY_MAX).setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setTimeoutAfter(stage==0?Math.max(1_000L,n.dueAt-System.currentTimeMillis()):5*60_000L)
+            .build();
         if(Build.VERSION.SDK_INT<33 || context.checkSelfPermission("android.permission.POST_NOTIFICATIONS")==PackageManager.PERMISSION_GRANTED) {
             NotificationChannel active=manager.getNotificationChannel(channelId);
             if(manager.areNotificationsEnabled() && active!=null &&
@@ -83,6 +85,11 @@ public class ReminderReceiver extends BroadcastReceiver {
                 else context.startService(ring);
             }catch(Exception error){
                 android.util.Log.e("MHNoteMate","Could not start reminder alarm service",error);
+                context.getSharedPreferences("mh_diagnostics",Context.MODE_PRIVATE).edit()
+                    .putString("last_alarm_error","Due alarm service start: "+error).apply();
+                // If Android refuses the foreground-service start, attempt short
+                // receiver-owned alarm playback rather than silently dropping it.
+                AlarmAudioFallback.play(context,n.toneUri);
             }
         }
         if(stage==1 && !"Never".equals(n.repeat)) {
