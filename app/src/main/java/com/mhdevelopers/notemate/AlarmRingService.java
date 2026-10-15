@@ -162,6 +162,12 @@ public class AlarmRingService extends Service {
             if(audio!=null && audio.getStreamVolume(AudioManager.STREAM_ALARM)==0)
                 android.util.Log.e("MHNoteMate","Alarm volume is ZERO; Android cannot play audible alarms");
         }catch(Exception error){android.util.Log.e("MHNoteMate","Unable to play selected alarm ringtone",error);}
+        if(!audioActive){
+            android.util.Log.e("MHNoteMate","Alarm audio failed; posting audible system fallback");
+            AlarmAudioFallback.postAudibleFallback(this,title);
+            stopSelf();
+            return START_NOT_STICKY;
+        }
         handler.removeCallbacks(autoStop);
         handler.postDelayed(autoStop,60_000L);
         return START_NOT_STICKY;
