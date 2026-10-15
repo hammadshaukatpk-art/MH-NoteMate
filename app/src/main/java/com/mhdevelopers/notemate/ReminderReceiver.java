@@ -36,7 +36,8 @@ public class ReminderReceiver extends BroadcastReceiver {
                 .getLong("advance_notified_"+id,0L)==n.dueAt){db.close();return;}
         NotificationManager manager=(NotificationManager)context.getSystemService(Context.NOTIFICATION_SERVICE);
         // The advance notification must disappear once the actual alarm is due.
-        if(stage==1)manager.cancel((int)(id*2));
+        // Do not remove the advance notification before the due alarm is handled.
+        // Otherwise it vanishes at the deadline even if Android blocks ringing.
         String channelId=stage==0?PREVIEW_CHANNEL:ALARM_CHANNEL;
         NotificationChannel channel=new NotificationChannel(channelId,
             stage==0?"Upcoming reminders":"Due alarms",NotificationManager.IMPORTANCE_HIGH);
@@ -63,20 +64,22 @@ public class ReminderReceiver extends BroadcastReceiver {
             .setPriority(stage==0?Notification.PRIORITY_MAX:Notification.PRIORITY_LOW)
             .setOnlyAlertOnce(true)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
-            .setTimeoutAfter(stage==0?Math.max(1_000L,n.dueAt-System.currentTimeMillis()):5*60_000L)
             .build();
+        boolean dueNotificationPosted=false;
         if(Build.VERSION.SDK_INT<33 || context.checkSelfPermission("android.permission.POST_NOTIFICATIONS")==PackageManager.PERMISSION_GRANTED) {
             NotificationChannel active=manager.getNotificationChannel(channelId);
             if(manager.areNotificationsEnabled() && active!=null &&
                 active.getImportance()!=NotificationManager.IMPORTANCE_NONE){
                 try{
                     manager.notify((int)(id*2+stage),notification);
+                    if(stage==1)dueNotificationPosted=true;
                     if(stage==0)context.getSharedPreferences("mh_reminder_alerts",Context.MODE_PRIVATE).edit()
                         .putLong("advance_notified_"+id,n.dueAt).apply();
                 }catch(Exception error){android.util.Log.e("MHNoteMate","Reminder notification failed",error);}
             }else android.util.Log.e("MHNoteMate","Reminder notifications disabled in Android settings");
         }
         if(stage==1){
+            if(dueNotificationPosted)manager.cancel((int)(id*2));
             // Exact alarm time: ring audibly until stopped or after 60 seconds.
             // Android can restrict background service starts on some devices;
             // the high-priority alarm notification above remains the fallback.
@@ -96,6 +99,7 @@ public class ReminderReceiver extends BroadcastReceiver {
                 // If Android refuses the foreground-service start, attempt short
                 // receiver-owned alarm playback rather than silently dropping it.
                 AlarmAudioFallback.play(context,n.toneUri);
+                AlarmAudioFallback.postAudibleFallback(context,n.title);
             }
         }
         if(stage==1 && !"Never".equals(n.repeat)) {
