@@ -17,6 +17,16 @@ public class ReminderReceiver extends BroadcastReceiver {
     private static final String PREVIEW_CHANNEL="notemate_upcoming_v3";
     private static final String ALARM_CHANNEL="notemate_alarm_v4";
     @Override public void onReceive(Context context,Intent intent) {
+        try{
+        handleReminder(context,intent);
+        }catch(Exception error){
+            android.util.Log.e("MHNoteMate","Reminder broadcast failed",error);
+            context.getSharedPreferences("mh_diagnostics",Context.MODE_PRIVATE).edit()
+                .putString("last_alarm_error","Reminder broadcast: "+error.getClass().getSimpleName()
+                    +": "+String.valueOf(error.getMessage())).apply();
+        }
+    }
+    private void handleReminder(Context context,Intent intent) {
         long id=intent.getLongExtra("note_id",-1);
         int stage=intent.getIntExtra("stage",1);
         NotesDb db=new NotesDb(context);NotesDb.Note n=db.get(id);
