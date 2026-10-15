@@ -77,7 +77,9 @@ public class AlarmRingService extends Service {
             getSharedPreferences("mh_diagnostics",MODE_PRIVATE).edit()
                 .putString("last_alarm_error","Foreground service: "+foregroundError.getClass().getSimpleName()
                     +": "+String.valueOf(foregroundError.getMessage())).apply();
-            try{manager.notify(NOTIFICATION_ID,notification);}catch(Exception ignored){}
+            AlarmAudioFallback.play(this,intent==null?"":intent.getStringExtra("tone_uri"));
+            // Never leave an ongoing 'ringing' notification after a failed service.
+            try{manager.cancel(NOTIFICATION_ID);}catch(Exception ignored){}
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -149,6 +151,8 @@ public class AlarmRingService extends Service {
         handler.removeCallbacks(autoStop);
         stopAudio();
         if(wakeLock!=null){try{if(wakeLock.isHeld())wakeLock.release();}catch(Exception ignored){}wakeLock=null;}
+        try{((NotificationManager)getSystemService(NOTIFICATION_SERVICE)).cancel(NOTIFICATION_ID);}
+        catch(Exception ignored){}
         super.onDestroy();
     }
 }
