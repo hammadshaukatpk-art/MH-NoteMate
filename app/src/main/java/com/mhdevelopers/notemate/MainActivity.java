@@ -62,12 +62,31 @@ public class MainActivity extends Activity {
         super.onCreate(state);getWindow().setStatusBarColor(WHITE);getWindow().setNavigationBarColor(WHITE);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
         db=new NotesDb(this);
+        installCrashDiagnostics();
         requestNotifications();
         if(Build.VERSION.SDK_INT>=33){
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
                 android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,()->handleBack());
         }
         showSplash();
+    }
+    private static boolean crashDiagnosticsInstalled=false;
+    private void installCrashDiagnostics(){
+        if(crashDiagnosticsInstalled)return;
+        crashDiagnosticsInstalled=true;
+        final Thread.UncaughtExceptionHandler previous=Thread.getDefaultUncaughtExceptionHandler();
+        final Context app=getApplicationContext();
+        Thread.setDefaultUncaughtExceptionHandler((thread,error)->{
+            try{
+                java.io.StringWriter buffer=new java.io.StringWriter();
+                error.printStackTrace(new java.io.PrintWriter(buffer));
+                String trace=buffer.toString();
+                app.getSharedPreferences("mh_diagnostics",Context.MODE_PRIVATE).edit()
+                    .putString("last_alarm_error","App crash ("+thread.getName()+"): "+
+                        trace.substring(0,Math.min(trace.length(),3500))).commit();
+            }catch(Throwable ignored){}
+            if(previous!=null)previous.uncaughtException(thread,error);
+        });
     }
     private void requestNotifications() {
         if(Build.VERSION.SDK_INT>=33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
@@ -803,7 +822,8 @@ public class MainActivity extends Activity {
             if(n.dueAt>0 && n.dueAt<=System.currentTimeMillis()){Toast.makeText(this,"Choose a future date and time",Toast.LENGTH_LONG).show();return;}
             try{
                 n.id=db.save(n);
-                AlarmHelper.schedule(this,n);
+                if(!AlarmHelper.schedule(this,n))
+                    throw new IllegalStateException("Android could not schedule the due-time alarm. Please check precise alarm access.");
             }catch(Exception error){
                 android.util.Log.e("MHNoteMate","Reminder save or scheduling failed",error);
                 String detail=error.getClass().getSimpleName()+": "+String.valueOf(error.getMessage());
