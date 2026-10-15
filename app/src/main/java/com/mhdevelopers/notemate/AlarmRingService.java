@@ -72,8 +72,14 @@ public class AlarmRingService extends Service {
             else startForeground(NOTIFICATION_ID,notification);
         }catch(Exception foregroundError){
             android.util.Log.e("MHNoteMate","Foreground alarm service could not start",foregroundError);
-            // Keep a visible fallback notification if the OEM blocks foreground promotion.
+            // Android requires a foreground service to promote itself promptly.
+            // Continuing after startForeground fails can cause a fatal system crash.
+            getSharedPreferences("mh_diagnostics",MODE_PRIVATE).edit()
+                .putString("last_alarm_error","Foreground service: "+foregroundError.getClass().getSimpleName()
+                    +": "+String.valueOf(foregroundError.getMessage())).apply();
             try{manager.notify(NOTIFICATION_ID,notification);}catch(Exception ignored){}
+            stopSelf();
+            return START_NOT_STICKY;
         }
         try{
             PowerManager power=(PowerManager)getSystemService(POWER_SERVICE);
