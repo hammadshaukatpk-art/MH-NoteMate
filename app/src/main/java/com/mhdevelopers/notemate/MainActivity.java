@@ -35,6 +35,8 @@ import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.MotionEvent;
+import android.view.KeyEvent;
 import android.widget.*;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -61,14 +63,57 @@ public class MainActivity extends Activity {
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);getWindow().setStatusBarColor(WHITE);getWindow().setNavigationBarColor(WHITE);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
-        db=new NotesDb(this);
         installCrashDiagnostics();
+        db=new NotesDb(this);
         requestNotifications();
         if(Build.VERSION.SDK_INT>=33){
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
                 android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,()->handleBack());
         }
         showSplash();
+    }
+    /**
+     * Android dispatches ordinary button taps through Activity.dispatchTouchEvent.
+     * Contain UI callback exceptions so a broken screen or OEM widget does not
+     * terminate the whole process, and keep a stack trace for an actual repair.
+     */
+    @Override public boolean dispatchTouchEvent(MotionEvent event){
+        try{return super.dispatchTouchEvent(event);}
+        catch(RuntimeException error){recoverFromUiFailure("Tap",error);return true;}
+        catch(LinkageError error){recoverFromUiFailure("Tap",error);return true;}
+    }
+    @Override public boolean dispatchKeyEvent(KeyEvent event){
+        try{return super.dispatchKeyEvent(event);}
+        catch(RuntimeException error){recoverFromUiFailure("Key",error);return true;}
+        catch(LinkageError error){recoverFromUiFailure("Key",error);return true;}
+    }
+    private boolean recoveringUi=false;
+    private void recoverFromUiFailure(String operation,Throwable error){
+        recordUiError(operation,error);
+        android.util.Log.e("MHNoteMate",operation+" callback failed",error);
+        if(recoveringUi)return;
+        recoveringUi=true;
+        try{Toast.makeText(this,"That action failed. Your notes are safe.",Toast.LENGTH_LONG).show();}
+        catch(Exception ignored){}
+        new Handler(getMainLooper()).post(()->{
+            try{
+                if(!isFinishing() && !isDestroyed())render("Home");
+            }catch(Throwable recoveryError){
+                recordUiError("Screen recovery",recoveryError);
+                android.util.Log.e("MHNoteMate","Could not restore home screen",recoveryError);
+            }finally{recoveringUi=false;}
+        });
+    }
+    private void recordUiError(String operation,Throwable error){
+        try{
+            java.io.StringWriter buffer=new java.io.StringWriter();
+            error.printStackTrace(new java.io.PrintWriter(buffer));
+            String trace=buffer.toString();
+            getSharedPreferences("mh_diagnostics",MODE_PRIVATE).edit()
+                .putString("last_alarm_error",operation+": "+trace.substring(0,Math.min(3500,trace.length())))
+                .putString("last_app_crash",operation+": "+trace.substring(0,Math.min(3500,trace.length())))
+                .apply();
+        }catch(Throwable ignored){}
     }
     private static boolean crashDiagnosticsInstalled=false;
     private void installCrashDiagnostics(){
@@ -83,6 +128,8 @@ public class MainActivity extends Activity {
                 String trace=buffer.toString();
                 app.getSharedPreferences("mh_diagnostics",Context.MODE_PRIVATE).edit()
                     .putString("last_alarm_error","App crash ("+thread.getName()+"): "+
+                        trace.substring(0,Math.min(trace.length(),3500)))
+                    .putString("last_app_crash","App crash ("+thread.getName()+"): "+
                         trace.substring(0,Math.min(trace.length(),3500))).commit();
             }catch(Throwable ignored){}
             if(previous!=null)previous.uncaughtException(thread,error);
@@ -138,7 +185,30 @@ public class MainActivity extends Activity {
         FrameLayout.LayoutParams footer=new FrameLayout.LayoutParams(-1,d(50),Gravity.BOTTOM);
         footer.setMargins(d(12),0,d(12),d(24));stage.addView(credit,footer);
         handleModernInsets(stage);setContentView(stage);
-        new Handler(getMainLooper()).postDelayed(()->render("Home"),1600);
+        new Handler(getMainLooper()).postDelayed(()->{
+            if(isFinishing() || isDestroyed())return;
+            try{
+                render("Home");
+                showLastCrashIfAny();
+            }catch(RuntimeException error){recoverFromUiFailure("Startup",error);}
+        },1600);
+    }
+    private void showLastCrashIfAny(){
+        String error=getSharedPreferences("mh_diagnostics",MODE_PRIVATE).getString("last_app_crash","");
+        if(error.isEmpty() || isFinishing() || isDestroyed())return;
+        getSharedPreferences("mh_diagnostics",MODE_PRIVATE).edit().remove("last_app_crash").apply();
+        try{
+            themedConfirm("Previous app error detected",
+                "MH NoteMate recorded an error. Your notes are stored locally. "+
+                "Use Copy details to share the exact cause:\\n\\n"+error,
+                "Dismiss","Copy details",null,()->{
+                    android.content.ClipboardManager clipboard=
+                        (android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+                    if(clipboard!=null)clipboard.setPrimaryClip(
+                        android.content.ClipData.newPlainText("MH NoteMate crash report",error));
+                    Toast.makeText(this,"Error details copied",Toast.LENGTH_SHORT).show();
+                });
+        }catch(Exception dialogError){android.util.Log.e("MHNoteMate","Crash report dialog failed",dialogError);}
     }
     private View toolbarIcon(boolean searchIcon,Runnable action){
         View icon=new View(this){
@@ -916,7 +986,10 @@ public class MainActivity extends Activity {
         });
         dialog.show();
     }
-    @Override public void onBackPressed(){handleBack();}
+    @Override public void onBackPressed(){
+        try{handleBack();}
+        catch(RuntimeException error){recoverFromUiFailure("Back navigation",error);}
+    }
     @Override protected void onResume(){
         super.onResume();
         // Opening the app while an alarm is ringing must not cancel/recreate every
