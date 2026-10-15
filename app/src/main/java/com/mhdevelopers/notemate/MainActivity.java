@@ -8,6 +8,7 @@ import android.app.DatePickerDialog;
 import android.app.TimePickerDialog;
 import android.media.RingtoneManager;
 import android.media.Ringtone;
+import android.database.Cursor;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -357,8 +358,16 @@ public class MainActivity extends Activity {
         heading("Preferences",null,null);
         LinearLayout c=card(WHITE,17);
         settingsRow(c,"🔔","Notification permission","Allow MH NoteMate to send reminders",()->openNotificationPermission());
-        settingsRow(c,"⏰","Precise alarm access","For reminders to ring at the chosen time",()->exactAlarmSettings());
+        AlarmManager am=(AlarmManager)getSystemService(ALARM_SERVICE);
+        boolean exact=Build.VERSION.SDK_INT<31 || am.canScheduleExactAlarms();
+        settingsRow(c,"⏰","Precise alarm access",exact?"Enabled — alarms can ring on time":"OFF — tap to allow exact alarms",()->exactAlarmSettings());
         settingsRow(c,"🔁","Restore scheduled alarms","Reschedule all upcoming reminders",()->{AlarmHelper.rescheduleAll(this);Toast.makeText(this,"Reminders refreshed",Toast.LENGTH_SHORT).show();});
+        settingsRow(c,"🔊","Test alarm sound","Play a short test alarm",()->{
+            Intent test=new Intent(this,AlarmRingService.class);
+            test.setAction(AlarmRingService.ACTION_START);test.putExtra("title","Test alarm");
+            try{startForegroundService(test);Toast.makeText(this,"Alarm test started — use Stop Alarm to silence",Toast.LENGTH_LONG).show();}
+            catch(Exception error){Toast.makeText(this,"Alarm test failed: "+error.getClass().getSimpleName(),Toast.LENGTH_LONG).show();}
+        });
         content.addView(c);space(content,18);heading("About",null,null);
         LinearLayout about=card(WHITE,18);about.setGravity(Gravity.CENTER);space(about,10);
         ImageView icon=new ImageView(this);icon.setImageResource(R.mipmap.ic_launcher);about.addView(icon,lp(90,90));
@@ -667,17 +676,7 @@ public class MainActivity extends Activity {
         TextView before=txt("15 minutes before",14,BLUE,true);
         editorRow(alarmOptions,"Notification",before);
         selectedToneLabel=clickText(alarmToneName(selectedToneUri)+"   ›",14,BLUE,true,()->{});
-        selectedToneLabel.setOnClickListener(v->{
-            Intent picker=new Intent(RingtoneManager.ACTION_RINGTONE_PICKER);
-            picker.putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE,RingtoneManager.TYPE_ALARM);
-            picker.putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE,"Select reminder alarm tone");
-            picker.putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT,true);
-            picker.putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT,false);
-            picker.putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI,
-                selectedToneUri.isEmpty()?RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM):Uri.parse(selectedToneUri));
-            try{startActivityForResult(picker,PICK_ALARM_TONE);}
-            catch(Exception error){Toast.makeText(this,"Ringtone picker unavailable on this phone",Toast.LENGTH_LONG).show();}
-        });
+        selectedToneLabel.setOnClickListener(v->showThemedTonePicker());
         editorRow(alarmOptions,"Alarm tone",selectedToneLabel);
         Spinner repeat=spinner(REPEAT,Arrays.asList(REPEAT).indexOf(n.repeat));editorRow(alarmOptions,"Repeat",repeat);
         options.addView(alarmOptions);editorRow(options,"Category",category);options.addView(alarm);
@@ -717,13 +716,59 @@ public class MainActivity extends Activity {
         }catch(Exception ignored){}
         return "Selected tone";
     }
-    @Override protected void onActivityResult(int requestCode,int resultCode,Intent data) {
-        super.onActivityResult(requestCode,resultCode,data);
-        if(requestCode==PICK_ALARM_TONE && resultCode==RESULT_OK && data!=null) {
-            Uri picked=data.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI);
-            selectedToneUri=picked==null?"":picked.toString();
-            if(selectedToneLabel!=null)selectedToneLabel.setText(alarmToneName(selectedToneUri)+"   ›");
+    private void showThemedTonePicker(){
+        ArrayList<String> uris=new ArrayList<>(),names=new ArrayList<>();
+        uris.add("");names.add("Phone default alarm");
+        RingtoneManager rm=new RingtoneManager(this);rm.setType(RingtoneManager.TYPE_ALARM);
+        try(Cursor cursor=rm.getCursor()){
+            if(cursor!=null)for(int i=0;i<cursor.getCount() && i<50;i++){
+                try{Uri uri=rm.getRingtoneUri(i);
+                    if(uri!=null){uris.add(uri.toString());names.add(cursor.moveToPosition(i)?cursor.getString(RingtoneManager.TITLE_COLUMN_INDEX):"Alarm tone");}
+                }catch(Exception error){android.util.Log.w("MHNoteMate","Tone unavailable",error);}
+            }
+        }catch(Exception error){android.util.Log.w("MHNoteMate","Could not load alarm tones",error);}
+        LinearLayout shell=vert();shell.setBackground(shape(WHITE,20));
+        shell.addView(dialogHeading("Choose Alarm Tone"));
+        LinearLayout body=vert();pad(body,18,12,18,18);
+        body.addView(txt("Tap to preview a sound, then select Use Tone.",13,MUTED,false));space(body,12);
+        ScrollView scroller=new ScrollView(this);LinearLayout list=vert();scroller.addView(list);
+        final String[] selected={selectedToneUri};
+        final Ringtone[] playing={null};
+        final ArrayList<TextView> checks=new ArrayList<>();
+        for(int i=0;i<uris.size();i++){
+            final int index=i;LinearLayout row=horiz();pad(row,12,8,12,8);
+            row.setBackground(shape(i%2==0?0xFFEDF5FF:0xFFF5F8FF,13));
+            TextView symbol=center("♫",22,BLUE,true);row.addView(symbol,lp(38,40));
+            TextView label=txt(names.get(i),14,DARK,true);row.addView(label,new LinearLayout.LayoutParams(0,-2,1));
+            TextView check=center(uris.get(i).equals(selected[0])?"●":"○",22,BLUE,true);
+            checks.add(check);row.addView(check,lp(30,40));
+            row.setOnClickListener(v->{
+                selected[0]=uris.get(index);
+                for(int j=0;j<checks.size();j++)checks.get(j).setText(uris.get(j).equals(selected[0])?"●":"○");
+                if(playing[0]!=null)playing[0].stop();
+                try{
+                    Uri sound=selected[0].isEmpty()?RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM):Uri.parse(selected[0]);
+                    playing[0]=RingtoneManager.getRingtone(this,sound);
+                    if(playing[0]!=null)playing[0].play();
+                }catch(Exception error){Toast.makeText(this,"Cannot preview this tone",Toast.LENGTH_SHORT).show();}
+            });
+            list.addView(row,lp(-1,56));space(list,7);
         }
+        body.addView(scroller,new LinearLayout.LayoutParams(-1,d(310)));space(body,12);
+        LinearLayout buttons=horiz();
+        TextView cancel=dialogButton("Cancel",false),accept=dialogButton("Use Tone",true);
+        LinearLayout.LayoutParams half=new LinearLayout.LayoutParams(0,d(48),1);half.rightMargin=d(10);
+        buttons.addView(cancel,half);buttons.addView(accept,new LinearLayout.LayoutParams(0,d(48),1));
+        body.addView(buttons);shell.addView(body);
+        AlertDialog dialog=themedDialog(shell);
+        dialog.setOnDismissListener(v->{if(playing[0]!=null)playing[0].stop();});
+        cancel.setOnClickListener(v->dialog.dismiss());
+        accept.setOnClickListener(v->{
+            selectedToneUri=selected[0];
+            if(selectedToneLabel!=null)selectedToneLabel.setText(alarmToneName(selectedToneUri)+"   ›");
+            dialog.dismiss();
+        });
+        dialog.show();
     }
     @Override public void onBackPressed(){handleBack();}
     @Override protected void onResume(){super.onResume();if(db!=null && !editorOpen && root!=null && !tab.isEmpty())AlarmHelper.rescheduleAll(this);}
