@@ -68,7 +68,10 @@ public class MainActivity extends Activity {
         requestNotifications();
         if(Build.VERSION.SDK_INT>=33){
             getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
-                android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,()->handleBack());
+                android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,()->{
+                    try{handleBack();}
+                    catch(RuntimeException error){recoverFromUiFailure("System back",error);}
+                });
         }
         showSplash();
     }
@@ -996,5 +999,10 @@ public class MainActivity extends Activity {
         // PendingIntent and alarm. Saving a reminder and BootReceiver handle scheduling.
         // Settings has an explicit "Restore scheduled alarms" action.
     }
-    @Override protected void onDestroy(){if(db!=null)db.close();try{if(directTestRingtone!=null)directTestRingtone.stop();}catch(Exception ignored){}if(directTestTone!=null)directTestTone.release();super.onDestroy();}
+    @Override protected void onDestroy(){
+        try{if(db!=null)db.close();}catch(Exception error){android.util.Log.w("MHNoteMate","DB close failed",error);}
+        try{if(directTestRingtone!=null)directTestRingtone.stop();}catch(Exception ignored){}
+        try{if(directTestTone!=null)directTestTone.release();}catch(Exception ignored){}
+        super.onDestroy();
+    }
 }
