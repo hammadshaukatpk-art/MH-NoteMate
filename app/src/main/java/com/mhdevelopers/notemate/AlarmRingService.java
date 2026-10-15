@@ -155,7 +155,7 @@ public class AlarmRingService extends Service {
             // Final audible fallback if the device has no usable ringtone URI.
             if((player==null || !player.isPlaying()) && (ringtone==null || !ringtone.isPlaying())){
                 tone=new ToneGenerator(AudioManager.STREAM_ALARM,100);
-                audioActive=tone.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD,3000);
+                audioActive=tone.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD,60_000);
                 android.util.Log.w("MHNoteMate","Playing synthesized alarm fallback");
             }
             AudioManager audio=(AudioManager)getSystemService(AUDIO_SERVICE);
