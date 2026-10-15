@@ -770,7 +770,13 @@ public class MainActivity extends Activity {
         TextView before=txt("15 minutes before",14,BLUE,true);
         editorRow(alarmOptions,"Notification",before);
         selectedToneLabel=clickText(alarmToneName(selectedToneUri)+"   ›",14,BLUE,true,()->{});
-        selectedToneLabel.setOnClickListener(v->showThemedTonePicker());
+        selectedToneLabel.setOnClickListener(v->{
+            try{showThemedTonePicker();}
+            catch(Exception error){
+                android.util.Log.e("MHNoteMate","Tone picker failed",error);
+                Toast.makeText(this,"Cannot open tones: "+error.getClass().getSimpleName(),Toast.LENGTH_LONG).show();
+            }
+        });
         editorRow(alarmOptions,"Alarm tone",selectedToneLabel);
         Spinner repeat=spinner(REPEAT,Arrays.asList(REPEAT).indexOf(n.repeat));editorRow(alarmOptions,"Repeat",repeat);
         options.addView(alarmOptions);editorRow(options,"Category",category);options.addView(alarm);
@@ -786,7 +792,18 @@ public class MainActivity extends Activity {
             n.repeat=alarm.isChecked()?REPEAT[repeat.getSelectedItemPosition()]:"Never";
             n.toneUri=selectedToneUri;
             if(n.dueAt>0 && n.dueAt<=System.currentTimeMillis()){Toast.makeText(this,"Choose a future date and time",Toast.LENGTH_LONG).show();return;}
-            n.id=db.save(n);AlarmHelper.schedule(this,n);
+            try{
+                n.id=db.save(n);
+                AlarmHelper.schedule(this,n);
+            }catch(Exception error){
+                android.util.Log.e("MHNoteMate","Reminder save or scheduling failed",error);
+                String detail=error.getClass().getSimpleName()+": "+String.valueOf(error.getMessage());
+                getSharedPreferences("mh_diagnostics",MODE_PRIVATE).edit().putString("last_alarm_error",detail).apply();
+                themedConfirm("Reminder could not be scheduled",
+                    "The app detected an error instead of closing. Details: "+detail,
+                    "Close","Alarm settings",null,()->exactAlarmSettings());
+                return;
+            }
             NotificationManager notificationManager=(NotificationManager)getSystemService(NOTIFICATION_SERVICE);
             if(!notificationManager.areNotificationsEnabled())
                 Toast.makeText(this,"Reminder saved, but Android notifications are BLOCKED. Enable them in Settings.",Toast.LENGTH_LONG).show();
@@ -871,6 +888,12 @@ public class MainActivity extends Activity {
         dialog.show();
     }
     @Override public void onBackPressed(){handleBack();}
-    @Override protected void onResume(){super.onResume();if(db!=null && !editorOpen && root!=null && !tab.isEmpty())AlarmHelper.rescheduleAll(this);}
+    @Override protected void onResume(){
+        super.onResume();
+        if(db!=null && !editorOpen && root!=null && !tab.isEmpty()){
+            try{AlarmHelper.rescheduleAll(this);}
+            catch(Exception error){android.util.Log.e("MHNoteMate","Alarm restore failed",error);}
+        }
+    }
     @Override protected void onDestroy(){if(db!=null)db.close();try{if(directTestRingtone!=null)directTestRingtone.stop();}catch(Exception ignored){}if(directTestTone!=null)directTestTone.release();super.onDestroy();}
 }
