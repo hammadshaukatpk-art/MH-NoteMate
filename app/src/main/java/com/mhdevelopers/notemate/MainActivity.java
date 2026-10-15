@@ -370,6 +370,15 @@ public class MainActivity extends Activity {
         boolean exact=Build.VERSION.SDK_INT<31 || am.canScheduleExactAlarms();
         settingsRow(c,"⏰","Precise alarm access",exact?"Enabled — alarms can ring on time":"OFF — tap to allow exact alarms",()->exactAlarmSettings());
         settingsRow(c,"🔁","Restore scheduled alarms","Reschedule all upcoming reminders",()->{AlarmHelper.rescheduleAll(this);Toast.makeText(this,"Reminders refreshed",Toast.LENGTH_SHORT).show();});
+        settingsRow(c,"🛠","Last alarm error","Show diagnostic details if a reminder fails",()->{
+            String error=getSharedPreferences("mh_diagnostics",MODE_PRIVATE)
+                .getString("last_alarm_error","No alarm error has been recorded yet.");
+            themedConfirm("Alarm diagnostics",error,"Close","Copy details",null,()->{
+                android.content.ClipboardManager clipboard=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+                if(clipboard!=null)clipboard.setPrimaryClip(android.content.ClipData.newPlainText("MH NoteMate alarm error",error));
+                Toast.makeText(this,"Diagnostic details copied",Toast.LENGTH_SHORT).show();
+            });
+        });
         settingsRow(c,"🔊","Test alarm sound","Play a ringtone directly and check your alarm volume",()->testAlarmSound());
         settingsRow(c,"🔔","Test alarm service","Test the background ringing system",()->{
             Intent test=new Intent(this,AlarmRingService.class);
