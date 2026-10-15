@@ -9,6 +9,8 @@ import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.media.AudioAttributes;
 import android.media.Ringtone;
+import android.media.MediaPlayer;
+import android.media.AudioManager;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
@@ -25,6 +27,7 @@ public class AlarmRingService extends Service {
     private static final String CHANNEL="mh_notemate_ringing_v1";
     private static final int NOTIFICATION_ID=54001;
     private Ringtone ringtone;
+    private MediaPlayer player;
     private final Handler handler=new Handler(Looper.getMainLooper());
     private final Runnable autoStop=this::stopSelf;
 
@@ -59,7 +62,7 @@ public class AlarmRingService extends Service {
             startForeground(NOTIFICATION_ID,notification,ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
         }else startForeground(NOTIFICATION_ID,notification);
         try{
-            if(ringtone!=null && ringtone.isPlaying())ringtone.stop();
+            stopAudio();
             String selected=intent==null?"":intent.getStringExtra("tone_uri");
             Uri sound=null;
             if(selected!=null && !selected.isEmpty()) {
@@ -69,24 +72,48 @@ public class AlarmRingService extends Service {
             }
             if(sound==null)sound=RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
             if(sound==null)sound=RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
-            ringtone=RingtoneManager.getRingtone(this,sound);
-            if(ringtone==null)ringtone=RingtoneManager.getRingtone(this,RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM));
-            if(ringtone!=null){
-                ringtone.setAudioAttributes(new AudioAttributes.Builder()
+            // Prefer MediaPlayer for consistent looping on OEM Android builds.
+            try{
+                player=new MediaPlayer();
+                player.setAudioAttributes(new AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_ALARM)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
-                if(Build.VERSION.SDK_INT>=28)ringtone.setLooping(true);
-                ringtone.play();
+                player.setDataSource(this,sound);
+                player.setLooping(true);
+                player.prepare();
+                player.start();
+                android.util.Log.i("MHNoteMate","Alarm audio started");
+            }catch(Exception mediaError){
+                android.util.Log.w("MHNoteMate","MediaPlayer failed; using ringtone fallback",mediaError);
+                if(player!=null){player.release();player=null;}
+                ringtone=RingtoneManager.getRingtone(this,sound);
+                if(ringtone==null)ringtone=RingtoneManager.getRingtone(this,
+                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION));
+                if(ringtone!=null){
+                    ringtone.setAudioAttributes(new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
+                    if(Build.VERSION.SDK_INT>=28)ringtone.setLooping(true);
+                    ringtone.play();
+                }else android.util.Log.e("MHNoteMate","No playable alarm sound on this device");
             }
+            AudioManager audio=(AudioManager)getSystemService(AUDIO_SERVICE);
+            if(audio!=null && audio.getStreamVolume(AudioManager.STREAM_ALARM)==0)
+                android.util.Log.w("MHNoteMate","Device alarm volume is muted");
         }catch(Exception error){android.util.Log.e("MHNoteMate","Unable to play selected alarm ringtone",error);}
         handler.removeCallbacks(autoStop);
         handler.postDelayed(autoStop,60_000L);
         return START_NOT_STICKY;
     }
-    @Override public void onDestroy(){
-        handler.removeCallbacks(autoStop);
+    private void stopAudio(){
+        try{if(player!=null){if(player.isPlaying())player.stop();player.release();}}catch(Exception ignored){}
+        player=null;
         try{if(ringtone!=null && ringtone.isPlaying())ringtone.stop();}catch(Exception ignored){}
         ringtone=null;
+    }
+    @Override public void onDestroy(){
+        handler.removeCallbacks(autoStop);
+        stopAudio();
         super.onDestroy();
     }
 }
