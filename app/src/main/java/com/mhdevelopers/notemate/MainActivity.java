@@ -8,6 +8,10 @@ import android.app.DatePickerDialog;
 import android.app.TimePickerDialog;
 import android.media.RingtoneManager;
 import android.media.Ringtone;
+import android.media.AudioAttributes;
+import android.media.AudioManager;
+import android.media.ToneGenerator;
+import android.app.NotificationManager;
 import android.database.Cursor;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -362,11 +366,20 @@ public class MainActivity extends Activity {
         boolean exact=Build.VERSION.SDK_INT<31 || am.canScheduleExactAlarms();
         settingsRow(c,"⏰","Precise alarm access",exact?"Enabled — alarms can ring on time":"OFF — tap to allow exact alarms",()->exactAlarmSettings());
         settingsRow(c,"🔁","Restore scheduled alarms","Reschedule all upcoming reminders",()->{AlarmHelper.rescheduleAll(this);Toast.makeText(this,"Reminders refreshed",Toast.LENGTH_SHORT).show();});
-        settingsRow(c,"🔊","Test alarm sound","Play a short test alarm",()->{
+        settingsRow(c,"🔊","Test alarm sound","Play a ringtone directly and check your alarm volume",()->testAlarmSound());
+        settingsRow(c,"🔔","Test alarm service","Test the background ringing system",()->{
             Intent test=new Intent(this,AlarmRingService.class);
-            test.setAction(AlarmRingService.ACTION_START);test.putExtra("title","Test alarm");
-            try{startForegroundService(test);Toast.makeText(this,"Alarm test started — use Stop Alarm to silence",Toast.LENGTH_LONG).show();}
-            catch(Exception error){Toast.makeText(this,"Alarm test failed: "+error.getClass().getSimpleName(),Toast.LENGTH_LONG).show();}
+            test.setAction(AlarmRingService.ACTION_START);
+            test.putExtra("title","Test alarm service");
+            try{
+                startForegroundService(test);
+                Toast.makeText(this,"Alarm service requested. Check the alarm notification.",Toast.LENGTH_LONG).show();
+            }catch(Exception error){
+                android.util.Log.e("MHNoteMate","Alarm service start failed",error);
+                themedConfirm("Alarm service could not start",
+                    error.getClass().getSimpleName()+": "+error.getMessage(),
+                    "Close","Open notification settings",null,()->openNotificationPermission());
+            }
         });
         content.addView(c);space(content,18);heading("About",null,null);
         LinearLayout about=card(WHITE,18);about.setGravity(Gravity.CENTER);space(about,10);
@@ -382,6 +395,44 @@ public class MainActivity extends Activity {
         LinearLayout row=horiz();TextView left=center(icon,26,BLUE,false);row.addView(left,lp(46,55));
         LinearLayout text=vert();text.addView(txt(title,15,DARK,true));text.addView(txt(subtitle,12,MUTED,false));row.addView(text,new LinearLayout.LayoutParams(0,-2,1));
         row.addView(txt("›",26,MUTED,false));pad(row,0,8,0,8);parent.addView(row);row.setOnClickListener(v->action.run());
+    }
+    private Ringtone directTestRingtone;
+    private ToneGenerator directTestTone;
+    private void testAlarmSound(){
+        AudioManager audio=(AudioManager)getSystemService(AUDIO_SERVICE);
+        if(audio!=null && audio.getStreamVolume(AudioManager.STREAM_ALARM)==0){
+            themedConfirm("Alarm volume is muted",
+                "Your phone's ALARM volume is zero. Increase Alarm volume in Android Sound settings, then test again.",
+                "Later","Sound settings",null,()->startActivity(new Intent(Settings.ACTION_SOUND_SETTINGS)));
+            return;
+        }
+        try{
+            if(directTestRingtone!=null)directTestRingtone.stop();
+            if(directTestTone!=null){directTestTone.release();directTestTone=null;}
+            Uri uri=RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
+            if(uri==null)uri=RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
+            directTestRingtone=RingtoneManager.getRingtone(this,uri);
+            if(directTestRingtone!=null){
+                directTestRingtone.setAudioAttributes(new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
+                directTestRingtone.play();
+            }
+            if(directTestRingtone==null || !directTestRingtone.isPlaying()){
+                directTestTone=new ToneGenerator(AudioManager.STREAM_ALARM,100);
+                directTestTone.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD,2500);
+            }
+            Toast.makeText(this,"Playing test sound on the ALARM audio channel",Toast.LENGTH_LONG).show();
+            new Handler().postDelayed(()->{
+                try{if(directTestRingtone!=null)directTestRingtone.stop();}catch(Exception ignored){}
+                if(directTestTone!=null){directTestTone.release();directTestTone=null;}
+            },5000);
+        }catch(Exception error){
+            android.util.Log.e("MHNoteMate","Direct audio test failed",error);
+            themedConfirm("Audio test failed",
+                error.getClass().getSimpleName()+": "+error.getMessage(),
+                "Close","Sound settings",null,()->startActivity(new Intent(Settings.ACTION_SOUND_SETTINGS)));
+        }
     }
     private void exactAlarmSettings(){
         if(Build.VERSION.SDK_INT>=31){
@@ -772,5 +823,5 @@ public class MainActivity extends Activity {
     }
     @Override public void onBackPressed(){handleBack();}
     @Override protected void onResume(){super.onResume();if(db!=null && !editorOpen && root!=null && !tab.isEmpty())AlarmHelper.rescheduleAll(this);}
-    @Override protected void onDestroy(){if(db!=null)db.close();super.onDestroy();}
+    @Override protected void onDestroy(){if(db!=null)db.close();try{if(directTestRingtone!=null)directTestRingtone.stop();}catch(Exception ignored){}if(directTestTone!=null)directTestTone.release();super.onDestroy();}
 }
