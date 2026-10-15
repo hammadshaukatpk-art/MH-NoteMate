@@ -20,7 +20,7 @@ public final class AlarmHelper {
         am.cancel(pending(c,id,0));am.cancel(pending(c,id,1));
     }
     public static void schedule(Context c,NotesDb.Note n) {
-        cancel(c,n.id);
+        try{cancel(c,n.id);}catch(Exception error){android.util.Log.e("MHNoteMate","Unable to cancel old alarms",error);}
         if(n.dueAt<=0 || n.done==1) return;
         AlarmManager am=(AlarmManager)c.getSystemService(Context.ALARM_SERVICE);
         // If saved inside the 15-minute window, notify immediately, exactly once per due time.
@@ -32,7 +32,9 @@ public final class AlarmHelper {
                 Intent immediate=new Intent(c,ReminderReceiver.class);
                 immediate.putExtra("note_id",n.id);
                 immediate.putExtra("stage",0);
-                new ReminderReceiver().onReceive(c,immediate);
+                // Do not let notification-channel or OEM failures crash the note editor.
+                try{new ReminderReceiver().onReceive(c,immediate);}
+                catch(Exception error){android.util.Log.e("MHNoteMate","Immediate reminder notification failed",error);}
             }
         } else {
             set(c,am,advanceAt,pending(c,n.id,0),false);
@@ -43,7 +45,8 @@ public final class AlarmHelper {
         if(at<=System.currentTimeMillis()) return;
         if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.S && !am.canScheduleExactAlarms()) {
             android.util.Log.w("MHNoteMate","Exact alarms disabled: scheduled reminder may be delayed");
-            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,pi);
+            try{am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,pi);}
+            catch(Exception error){android.util.Log.e("MHNoteMate","Inexact reminder scheduling failed",error);}
             return;
         }
         try {
@@ -54,9 +57,10 @@ public final class AlarmHelper {
                 // User-visible alarm clock survives Doze and gives reliable due-time delivery.
                 am.setAlarmClock(new AlarmManager.AlarmClockInfo(at,show),pi);
             }else am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,pi);
-        }catch(SecurityException e){
-            android.util.Log.e("MHNoteMate","Exact alarm access denied",e);
-            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,pi);
+        }catch(Exception e){
+            android.util.Log.e("MHNoteMate","Exact alarm scheduling failed; trying inexact fallback",e);
+            try{am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,at,pi);}
+            catch(Exception fallbackError){android.util.Log.e("MHNoteMate","All alarm scheduling methods failed",fallbackError);}
         }
     }
     public static void rescheduleAll(Context c) {
