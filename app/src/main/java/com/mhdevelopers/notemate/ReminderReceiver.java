@@ -14,8 +14,8 @@ import android.media.RingtoneManager;
 import java.util.Calendar;
 
 public class ReminderReceiver extends BroadcastReceiver {
-    private static final String PREVIEW_CHANNEL="notemate_upcoming_v1";
-    private static final String ALARM_CHANNEL="notemate_alarm_v2";
+    private static final String PREVIEW_CHANNEL="notemate_upcoming_v3";
+    private static final String ALARM_CHANNEL="notemate_alarm_v4";
     @Override public void onReceive(Context context,Intent intent) {
         long id=intent.getLongExtra("note_id",-1);
         int stage=intent.getIntExtra("stage",1);
@@ -32,8 +32,11 @@ public class ReminderReceiver extends BroadcastReceiver {
             stage==0?"Upcoming reminders":"Due alarms",NotificationManager.IMPORTANCE_HIGH);
         channel.setDescription(stage==0?"Advance alerts for upcoming notes and tasks":"Alarm sound when a note or task is due");
         channel.enableVibration(true);
+        channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
         if(stage==1)channel.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM),
             new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).build());
+        else channel.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
+            new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).build());
         manager.createNotificationChannel(channel);
         Intent open=new Intent(context,MainActivity.class);open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent tap=PendingIntent.getActivity(context,(int)id,open,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
@@ -47,11 +50,15 @@ public class ReminderReceiver extends BroadcastReceiver {
             .setAutoCancel(true).setCategory(stage==1?Notification.CATEGORY_ALARM:Notification.CATEGORY_REMINDER)
             .setPriority(Notification.PRIORITY_MAX).setVisibility(Notification.VISIBILITY_PUBLIC).build();
         if(Build.VERSION.SDK_INT<33 || context.checkSelfPermission("android.permission.POST_NOTIFICATIONS")==PackageManager.PERMISSION_GRANTED) {
-            if(manager.areNotificationsEnabled()) {
-                manager.notify((int)(id*2+stage),notification);
-                if(stage==0)context.getSharedPreferences("mh_reminder_alerts",Context.MODE_PRIVATE).edit()
-                    .putLong("advance_notified_"+id,n.dueAt).apply();
-            }
+            NotificationChannel active=manager.getNotificationChannel(channelId);
+            if(manager.areNotificationsEnabled() && active!=null &&
+                active.getImportance()!=NotificationManager.IMPORTANCE_NONE){
+                try{
+                    manager.notify((int)(id*2+stage),notification);
+                    if(stage==0)context.getSharedPreferences("mh_reminder_alerts",Context.MODE_PRIVATE).edit()
+                        .putLong("advance_notified_"+id,n.dueAt).apply();
+                }catch(Exception error){android.util.Log.e("MHNoteMate","Reminder notification failed",error);}
+            }else android.util.Log.e("MHNoteMate","Reminder notifications disabled in Android settings");
         }
         if(stage==1){
             // Exact alarm time: ring audibly until stopped or after 60 seconds.
